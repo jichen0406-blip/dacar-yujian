@@ -11,17 +11,19 @@ const PROJECT_ROOT = path.resolve(__dirname, "..");
 const DB_PATH = path.join(PROJECT_ROOT, "data", "wechat-search.db");
 
 // Section boundary markers — standalone short phrases that end the intro section
-const SECTION_STARTS = /^(病例资料|一般情况|病例简介|病例介绍|病史简介|辅助检查|现病史|既往史|诊疗经过|入院检查|查体|体格检查|诊断与治疗|开场致辞|病例分享|讨论与|总结|展望|结语|参考文献|声明|来源|编辑|排版|审核|作者|通讯|基金|版权|PART\d+|患者基线|入院前治疗|既往治疗)/;
+const SECTION_STARTS = /^(病例资料|一般情况|患者一般情况|病例简介|病例介绍|病史简介|辅助检查|现病史|既往史|诊疗经过|入院检查|查体|体格检查|诊断与治疗|开场致辞|病例分享|讨论与|总结|展望|结语|参考文献|声明|来源|编辑|排版|审核|作者|通讯|基金|版权|PART\d+|患者基线|入院前治疗|既往治疗|基线检查)/;
+
+// Sticky patterns: section header glued to next sentence content
+const STICKY_SECTION = /^(病例资料|一般情况|患者一般情况|病例简介|病例介绍|病史简介|辅助检查|现病史|既往史|诊疗经过|患者基线|基线检查)(患者|[男女，。，、]|该患者|\d)/;
 
 function cleanContent(text) {
+  if (!text) return "";
   return text
-    // Collapse WeChat's multi-newline scattered CJK formatting
     .replace(/([一-鿿])\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*([一-鿿])/g, "$1$2")
     .replace(/([一-鿿])\s*\n\s*\n\s*([一-鿿])/g, "$1$2")
     .replace(/([一-鿿])\s*\n\s*([一-鿿])/g, "$1$2")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/\n/g, "")
-    // Strip WeChat video player junk
     .replace(/视频加载失败，请刷新页面再试\s*刷新/g, "")
     .replace(/播放视频.+?(?=[一-鿿A-Za-z])/g, "")
     .trim();
@@ -31,8 +33,6 @@ function extractIntroFromContent(content) {
   if (!content) return "";
 
   const cleaned = cleanContent(content);
-
-  // Split into sentences by Chinese/English punctuation
   const sentences = cleaned.split(/(?<=[。！？；])/);
 
   // Find where the real intro starts (skip chapter-style headers)
@@ -53,15 +53,22 @@ function extractIntroFromContent(content) {
     const s = sentences[i].trim();
     if (!s) continue;
 
-    // Check if this sentence is a standalone section header
-    if (s.length < 25 && SECTION_STARTS.test(s) && introSentences.length > 0) {
+    // Check for sticky section header: "患者一般情况患者，" style
+    const stickyMatch = s.match(STICKY_SECTION);
+    if (stickyMatch && introSentences.length > 1) {
+      // Extract text before the section header
+      const header = stickyMatch[1];
+      const headerIdx = s.indexOf(header);
+      if (headerIdx > 0) {
+        // Header is embedded mid-sentence; take everything before it
+        const beforeHeader = s.slice(0, headerIdx).trim();
+        if (beforeHeader) introSentences.push(beforeHeader);
+      }
       break;
     }
 
-    // Sentence starts with section boundary keyword like "患者一般情况患者，..." after cleaning
-    const stickyMatch = s.match(/^(病例资料|一般情况|病例简介|病例介绍|病史简介|患者基本情况)(患者|[男女，。，])/);
-    if (stickyMatch && introSentences.length > 1) {
-      // Split out the header and stop before it
+    // Standalone short section header
+    if (s.length < 20 && SECTION_STARTS.test(s) && introSentences.length > 0) {
       break;
     }
 
@@ -71,12 +78,10 @@ function extractIntroFromContent(content) {
     }
 
     introSentences.push(s);
-
     if (introSentences.join("").length >= 450) break;
   }
 
   if (introSentences.length === 0) return cleaned.slice(0, 150);
-
   return introSentences.join("").trim().slice(0, 500);
 }
 
