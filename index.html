@@ -207,6 +207,7 @@
   <script>
   // ── Mode: embedded data (GitHub Pages) or API (local server) ──
   const USE_EMBEDDED = typeof window.__ARTICLES__ !== "undefined" && Array.isArray(window.__ARTICLES__) && window.__ARTICLES__.length > 0;
+  const embeddedArticles = USE_EMBEDDED ? window.__ARTICLES__ : [];
   let currentPage = 1;
   let currentQuery = "";
 let currentSource = "";
