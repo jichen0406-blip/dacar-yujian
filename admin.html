@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>大CAR愈见 — 管理面板</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  .header {
+    background: linear-gradient(135deg, #2c5f8a 0%, #1a3a5c 100%);
+    color: #fff;
+    padding: 24px 16px 20px;
+    text-align: center;
+  }
+  .header h1 { font-size: 22px; font-weight: 600; letter-spacing: 2px; }
+  .header p { font-size: 13px; opacity: 0.8; margin-top: 6px; }
+
+  /* ── Password Gate ── */
+  .password-gate {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 60vh; padding: 20px;
+  }
+  .password-card {
+    background: #fff; border-radius: 12px; padding: 32px 28px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.1); text-align: center;
+    max-width: 360px; width: 100%;
+  }
+  .password-card h2 { font-size: 18px; color: #1a1a2e; margin-bottom: 4px; }
+  .password-card .sub { font-size: 13px; color: #999; margin-bottom: 20px; }
+  .password-card input {
+    width: 100%; padding: 12px 14px; border: 1px solid #ddd;
+    border-radius: 8px; font-size: 15px; text-align: center;
+    outline: none; transition: border-color 0.2s;
+    letter-spacing: 2px;
+  }
+  .password-card input:focus { border-color: #2c5f8a; }
+  .password-card .pw-btn {
+    margin-top: 12px; width: 100%; padding: 10px; border-radius: 8px;
+    border: none; font-size: 15px; font-weight: 600; cursor: pointer;
+    background: #2c5f8a; color: #fff; transition: background 0.2s;
+  }
+  .password-card .pw-btn:hover { background: #1a3a5c; }
+  .password-card .pw-error { color: #d63031; font-size: 13px; margin-top: 10px; display: none; }
+
+  .main { max-width: 720px; margin: 0 auto; padding: 20px 16px; }
+
+  /* Stats cards */
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px; margin-bottom: 24px;
+  }
+  .stat-card {
+    background: #fff; border-radius: 10px; padding: 16px 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06); text-align: center;
+  }
+  .stat-value { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+  .stat-label { font-size: 12px; color: #888; margin-top: 2px; }
+
+  /* Section */
+  .section {
+    background: #fff; border-radius: 10px; padding: 20px 24px;
+    margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .section-title {
+    font-size: 17px; font-weight: 600; margin-bottom: 16px;
+    color: #1a1a2e;
+  }
+
+  /* Textarea */
+  textarea {
+    width: 100%; min-height: 180px; padding: 12px 14px;
+    border: 1px solid #ddd; border-radius: 10px; font-size: 14px;
+    line-height: 1.8; font-family: monospace; resize: vertical;
+    outline: none; transition: border-color 0.2s;
+  }
+  textarea:focus { border-color: #2c5f8a; }
+  .hint {
+    font-size: 12px; color: #999; margin-top: 8px;
+    line-height: 1.6;
+  }
+
+  /* Buttons */
+  .btn-row { display: flex; gap: 10px; margin-top: 12px; align-items: center; flex-wrap: wrap; }
+  .btn {
+    padding: 10px 24px; border-radius: 8px; border: none;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-primary { background: #e94560; color: #fff; }
+  .btn-primary:hover { background: #d63a53; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: #f0f0f0; color: #666; }
+  .btn-secondary:hover { background: #e0e0e0; }
+  .btn-deploy { background: #27ae60; color: #fff; }
+  .btn-deploy:hover { background: #219a52; }
+
+  /* Progress */
+  .progress { margin-top: 16px; display: none; }
+  .progress-bar {
+    height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden;
+  }
+  .progress-bar .fill {
+    height: 100%; background: #2c5f8a; border-radius: 3px;
+    transition: width 0.3s; width: 0%;
+  }
+  .progress-text { font-size: 13px; color: #666; margin-top: 6px; }
+
+  /* Result */
+  .result { margin-top: 16px; display: none; }
+  .result.success { display: block; color: #155724; }
+  .result .msg { font-size: 14px; font-weight: 500; }
+  .result .details { font-size: 13px; margin-top: 6px; color: #666; }
+  .result .failed-list { margin-top: 8px; font-size: 12px; color: #d63031; }
+  .result .failed-list li { margin-bottom: 4px; word-break: break-all; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+  th { color: #888; font-weight: 600; font-size: 11px; }
+  .btn-sm {
+    padding: 4px 10px; border-radius: 4px; border: none;
+    font-size: 11px; cursor: pointer; background: #fde8ec; color: #e94560;
+  }
+  .btn-sm:hover { background: #f8d7da; }
+
+  .nav-link { text-align: center; padding: 0 16px 8px; }
+  .nav-link a { color: #2c5f8a; text-decoration: none; font-size: 13px; }
+  .nav-link a:hover { text-decoration: underline; }
+
+  /* Toast */
+  .toast {
+    position: fixed; top: 24px; right: 24px;
+    padding: 12px 24px; border-radius: 8px; color: #fff;
+    font-size: 14px; font-weight: 500; z-index: 1000;
+    transform: translateX(120%); transition: transform 0.3s;
+  }
+  .toast.show { transform: translateX(0); }
+  .toast.success { background: #00b894; }
+  .toast.error { background: #d63031; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚙️ 大CAR愈见 — 管理面板</h1>
+  <p>粘贴微信公众号文章链接，自动抓取元数据</p>
+</div>
+
+<div class="password-gate" id="passwordGate">
+  <div class="password-card">
+    <h2>🔒 身份验证</h2>
+    <div class="sub">请输入管理密码以继续</div>
+    <input type="password" id="passwordInput" placeholder="请输入密码" autofocus>
+    <button class="pw-btn" onclick="checkPassword()">验证</button>
+    <div class="pw-error" id="pwError">密码错误，请重试</div>
+  </div>
+</div>
+
+<div class="main" id="mainContent" style="display:none;">
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value" id="statTotal">-</div>
+      <div class="stat-label">总文章数</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="statSources">-</div>
+      <div class="stat-label">公众号数</div>
+    </div>
+  </div>
+
+  <!-- URL Input -->
+  <div class="section">
+    <h2 class="section-title">📎 添加文章</h2>
+    <div class="hint" style="margin-top:0;margin-bottom:8px;">
+      粘贴公众号文章链接（每行一个），支持批量添加
+    </div>
+    <textarea id="urlInput" placeholder="https://mp.weixin.qq.com/s/...
+https://mp.weixin.qq.com/s/...
+https://mp.weixin.qq.com/s/..."></textarea>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="fetchBtn" onclick="handleFetch()">🔍 抓取文章信息</button>
+      <button class="btn btn-secondary" onclick="clearUrls()">清空</button>
+      <button class="btn btn-deploy" id="deployBtn" onclick="handleDeploy()">🚀 部署到线上</button>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress" id="progress">
+      <div class="progress-bar"><div class="fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">准备中...</div>
+    </div>
+
+    <!-- Result -->
+    <div class="result" id="result">
+      <div class="msg" id="resultMsg"></div>
+      <div class="details" id="resultDetails"></div>
+      <ul class="failed-list" id="resultFailed"></ul>
+    </div>
+  </div>
+
+  <!-- Recent Articles -->
+  <div class="section">
+    <h2 class="section-title">📋 最近文章</h2>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>标题</th>
+            <th>来源</th>
+            <th>日期</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="articlesTableBody">
+          <tr><td colspan="4" style="text-align:center;color:#999;">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="nav-link"><a href="/">🔍 返回搜索</a></div>
+
+<script>
+// ── Password check ──
+function checkPassword() {
+  const pw = document.getElementById("passwordInput").value;
+  if (pw === "fucaso2026") {
+    document.getElementById("passwordGate").style.display = "none";
+    document.getElementById("mainContent").style.display = "block";
+    loadStats();
+    loadRecentArticles();
+  } else {
+    document.getElementById("pwError").style.display = "block";
+    document.getElementById("passwordInput").value = "";
+    document.getElementById("passwordInput").focus();
+  }
+}
+
+document.getElementById("passwordInput").addEventListener("keydown", function(e) {
+  if (e.key === "Enter") checkPassword();
+});
+
+async function loadStats() {
+  try {
+    const res = await fetch("/api/stats");
+    const data = await res.json();
+    document.getElementById("statTotal").textContent = data.total_articles || 0;
+    document.getElementById("statSources").textContent =
+      (data.by_source && data.by_source.length) || 0;
+  } catch (err) { console.error(err); }
+}
+
+async function loadRecentArticles() {
+  const tbody = document.getElementById("articlesTableBody");
+  try {
+    const res = await fetch("/api/search?limit=20");
+    const data = await res.json();
+    const rows = data.rows || [];
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">暂无文章</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</td>
+        <td>${escapeHtml(r.source_name)}</td>
+        <td>${escapeHtml(r.pub_date)}</td>
+        <td><button class="btn-sm" onclick="deleteArticle(${r.id})">删除</button></td>
+      </tr>
+    `).join("");
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#d63031;">加载失败</td></tr>';
+  }
+}
+
+async function handleFetch() {
+  const input = document.getElementById("urlInput").value.trim();
+  if (!input) { showToast("请粘贴文章链接", "error"); return; }
+
+  const urls = input.split("\n").map(l => l.trim()).filter(Boolean);
+  if (urls.length === 0) { showToast("请提供有效的链接", "error"); return; }
+
+  const fetchBtn = document.getElementById("fetchBtn");
+  const progress = document.getElementById("progress");
+  const progressFill = document.getElementById("progressFill");
+  const progressText = document.getElementById("progressText");
+  const result = document.getElementById("result");
+
+  fetchBtn.disabled = true;
+  fetchBtn.textContent = "⏳ 抓取中...";
+  progress.style.display = "block";
+  result.style.display = "none";
+
+  progressText.textContent = `正在抓取 ${urls.length} 篇文章...`;
+  progressFill.style.width = "30%";
+
+  try {
+    const res = await fetch("/api/fetch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls }),
+    });
+    const data = await res.json();
+
+    progressFill.style.width = "100%";
+    progressText.textContent = "完成！";
+
+    result.style.display = "block";
+    result.className = "result success";
+    document.getElementById("resultMsg").textContent =
+      `✅ 成功抓取 ${data.inserted} 篇`;
+    document.getElementById("resultDetails").textContent =
+      `总计: ${data.total} | 新增: ${data.inserted} | 重复跳过: ${data.duplicates} | 失败: ${data.failed?.length || 0}`;
+
+    const failedList = document.getElementById("resultFailed");
+    if (data.failed && data.failed.length > 0) {
+      failedList.innerHTML = data.failed.map(f =>
+        `<li>❌ ${escapeHtml(f.url.slice(0, 80))}... — ${escapeHtml(f.error)}</li>`
+      ).join("");
+    } else {
+      failedList.innerHTML = "";
+    }
+
+    showToast(`成功添加 ${data.inserted} 篇文章`, "success");
+    loadStats();
+    loadRecentArticles();
+
+    document.getElementById("urlInput").value = "";
+
+  } catch (err) {
+    console.error(err);
+    progressText.textContent = "抓取出错";
+    showToast("抓取失败，请检查服务器日志", "error");
+  } finally {
+    fetchBtn.disabled = false;
+    fetchBtn.textContent = "🔍 抓取文章信息";
+  }
+}
+
+async function handleDeploy() {
+  const deployBtn = document.getElementById("deployBtn");
+  deployBtn.disabled = true;
+  deployBtn.textContent = "⏳ 部署中...";
+
+  try {
+    const res = await fetch("/api/deploy", { method: "POST" });
+    const data = await res.json();
+    if (data.success) {
+      showToast("部署完成！1-2分钟后刷新线上页面", "success");
+    } else {
+      showToast("部署失败：" + (data.error || "未知错误"), "error");
+    }
+  } catch (err) {
+    console.error(err);
+    showToast("部署请求失败", "error");
+  } finally {
+    deployBtn.disabled = false;
+    deployBtn.textContent = "🚀 部署到线上";
+  }
+}
+
+async function deleteArticle(id) {
+  if (!confirm("确定删除这篇文章吗？")) return;
+  try {
+    await fetch(`/api/articles/${id}/delete`, { method: "POST" });
+    showToast("已删除", "success");
+    loadStats();
+    loadRecentArticles();
+  } catch (err) {
+    console.error(err);
+    showToast("删除失败", "error");
+  }
+}
+
+function clearUrls() {
+  document.getElementById("urlInput").value = "";
+  document.getElementById("result").style.display = "none";
+  document.getElementById("progress").style.display = "none";
+}
+
+function showToast(msg, type) {
+  const toast = document.createElement("div");
+  toast.className = `toast ${type} show`;
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => { toast.classList.remove("show"); }, 2500);
+  setTimeout(() => { toast.remove(); }, 3000);
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>

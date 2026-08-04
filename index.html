@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>大CAR愈见 — CAR-T细胞治疗病例报道检索</title>
+<meta name="description" content="CAR-T细胞治疗病例报道检索平台，支持按关键词快速搜索和跳转原文。">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .header {
+    background: linear-gradient(135deg, #2c5f8a 0%, #1a3a5c 100%);
+    color: #fff;
+    padding: 24px 16px 20px;
+    text-align: center;
+  }
+  .header h1 { font-size: 22px; font-weight: 600; letter-spacing: 2px; }
+  .header p { font-size: 13px; opacity: 0.8; margin-top: 6px; }
+
+  .search-box {
+    margin: 16px;
+    position: relative;
+  }
+  .search-box input {
+    width: 100%;
+    padding: 12px 16px 12px 40px;
+    border: 1px solid #ddd;
+    border-radius: 24px;
+    font-size: 15px;
+    background: #fff;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .search-box input:focus {
+    border-color: #2c5f8a;
+    box-shadow: 0 0 0 3px rgba(44,95,138,0.1);
+  }
+  .search-box .search-icon {
+    position: absolute;
+    left: 14px; top: 50%;
+    transform: translateY(-50%);
+    color: #999; font-size: 16px; pointer-events: none;
+  }
+
+  .stats {
+    text-align: center;
+    font-size: 13px; color: #888;
+    margin: 0 16px 12px;
+  }
+  .stats span { color: #2c5f8a; font-weight: 600; }
+
+  .source-filters {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: 0 16px 16px; justify-content: center;
+  }
+  .source-chip {
+    font-size: 12px; color: #666; background: #fff;
+    border: 1px solid #ddd; padding: 4px 12px;
+    border-radius: 14px; cursor: pointer;
+    transition: all 0.2s; user-select: none;
+  }
+  .source-chip:hover { border-color: #2c5f8a; color: #2c5f8a; }
+  .source-chip.active { background: #2c5f8a; color: #fff; border-color: #2c5f8a; }
+
+  .article-list { margin: 0 12px 20px; list-style: none; }
+
+  .article-item {
+    background: #fff; border-radius: 10px;
+    margin-bottom: 10px; padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    cursor: pointer; transition: box-shadow 0.2s, transform 0.15s;
+  }
+  .article-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+  .article-item:active { background: #fafafa; transform: scale(0.995); }
+
+  .article-item .source-tag {
+    display: inline-block; font-size: 11px; color: #2c5f8a;
+    background: #e8f0f8; padding: 2px 8px; border-radius: 10px;
+    margin-bottom: 6px; margin-right: 8px;
+  }
+  .article-item .pub-date {
+    font-size: 11px; color: #aaa; display: inline-block;
+  }
+  .article-item .title {
+    font-size: 15px; font-weight: 500; color: #222; display: block; margin-bottom: 4px;
+  }
+  .article-item .title em { color: #c00; font-style: normal; font-weight: 600; }
+  .article-item .summary {
+    font-size: 13px; color: #666; margin-top: 6px;
+    padding: 8px 10px; background: #fafaf5;
+    border-left: 3px solid #ddd; border-radius: 0 6px 6px 0;
+    line-height: 1.6; word-break: break-all;
+  }
+  .article-item .summary em { color: #c00; font-style: normal; font-weight: 500; }
+
+  .article-item .keywords { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .article-item .keywords .tag {
+    font-size: 11px; color: #666; background: #f0f0f0;
+    padding: 3px 8px; border-radius: 4px;
+    cursor: pointer; transition: background 0.15s, color 0.15s;
+  }
+  .article-item .keywords .tag:hover { background: #e0e0e0; color: #333; }
+  .article-item .keywords .tag.highlight { background: #ffe0a0; color: #8a5c00; }
+
+  /* Pagination */
+  .pagination {
+    display: flex; justify-content: center; align-items: center;
+    gap: 12px; padding: 8px 16px 32px;
+  }
+  .pagination button {
+    padding: 8px 18px; border-radius: 20px; border: 1px solid #ddd;
+    background: #fff; color: #333; cursor: pointer;
+    font-size: 14px; transition: all 0.2s;
+  }
+  .pagination button:hover:not(:disabled) { border-color: #2c5f8a; color: #2c5f8a; }
+  .pagination button:disabled { opacity: 0.4; cursor: default; }
+  .pagination .page-num { font-size: 14px; color: #666; min-width: 80px; text-align: center; }
+
+  .empty-state {
+    text-align: center; padding: 40px 16px; color: #999;
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-state p { font-size: 13px; margin-top: 4px; }
+
+  /* Loading */
+  .loading {
+    text-align: center; padding: 40px 16px; color: #999;
+  }
+  .loading .spinner {
+    width: 32px; height: 32px; border: 3px solid #e0e0e0;
+    border-top-color: #2c5f8a; border-radius: 50%;
+    margin: 0 auto 12px; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .sources-info {
+    margin: 0 16px 16px; font-size: 12px; color: #999;
+    text-align: center; line-height: 1.8;
+  }
+  .footer {
+    text-align: center; padding: 16px 16px 32px;
+    font-size: 12px; color: #bbb;
+  }
+  .nav-link {
+    text-align: center; padding: 0 16px 8px;
+  }
+  .nav-link a {
+    color: #2c5f8a; text-decoration: none; font-size: 13px;
+  }
+  .nav-link a:hover { text-decoration: underline; }
+
+  @media (min-width: 768px) {
+    .article-list, .search-box, .stats, .source-filters, .pagination {
+      max-width: 720px; margin-left: auto; margin-right: auto;
+    }
+    .header { padding: 36px 16px 28px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>大CAR愈见</h1>
+  <p>CAR-T细胞治疗病例报道检索</p>
+</div>
+
+<div class="search-box">
+  <span class="search-icon">🔍</span>
+  <input type="text" id="searchInput" placeholder="输入关键词搜索文章..." autofocus autocomplete="off">
+</div>
+
+<div class="stats">
+  共 <span id="totalCount">-</span> 篇文章，当前显示 <span id="showCount">-</span> 篇
+</div>
+
+<div class="source-filters" id="sourceFilters"></div>
+
+<ul class="article-list" id="articleList"></ul>
+
+<div class="loading" id="loading" style="display:none">
+  <div class="spinner"></div>
+  <p>搜索中...</p>
+</div>
+
+<div class="empty-state" id="emptyState" style="display:none">
+  <div class="icon">📭</div>
+  <p>未找到匹配的文章</p>
+  <p style="font-size:13px;margin-top:4px;">试试其他关键词，或先添加文章数据</p>
+</div>
+
+<div class="pagination" id="pagination" style="display:none"></div>
+
+<div class="sources-info" id="sourcesInfo"></div>
+
+<div class="nav-link"><a href="/admin.html">⚙️ 管理面板 — 添加文章</a></div>
+<div class="footer">点击文章卡片即可跳转到原文</div>
+
+  <!-- Embedded articles data for GitHub Pages (generated by build-data.js) -->
+  <script src="articles-data.js"></script>
+
+  <script>
+  // ── Mode: embedded data (GitHub Pages) or API (local server) ──
+  const USE_EMBEDDED = typeof window.__ARTICLES__ !== "undefined" && Array.isArray(window.__ARTICLES__) && window.__ARTICLES__.length > 0;
+  let currentPage = 1;
+  let currentQuery = "";
+let currentSource = "";
+let totalPages = 1;
+const LIMIT = 20;
+
+const searchInput = document.getElementById("searchInput");
+const articleList = document.getElementById("articleList");
+const emptyState = document.getElementById("emptyState");
+const loading = document.getElementById("loading");
+const totalCountEl = document.getElementById("totalCount");
+const showCountEl = document.getElementById("showCount");
+const sourceFilters = document.getElementById("sourceFilters");
+const pagination = document.getElementById("pagination");
+const sourcesInfo = document.getElementById("sourcesInfo");
+
+let searchTimer = null;
+
+searchInput.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    currentQuery = searchInput.value.trim();
+    currentPage = 1;
+    search();
+  }, 300);
+});
+
+async function init() {
+  await loadSources();
+  await search();
+  // Check URL params
+  const params = new URLSearchParams(window.location.search);
+  const q = params.get("q");
+  if (q) {
+    searchInput.value = q;
+    currentQuery = q;
+    await search();
+  }
+}
+
+async function loadSources() {
+  const sources = USE_EMBEDDED
+    ? [...new Set(embeddedArticles.map(a => a.source_name))].sort()
+    : await fetch("/api/sources").then(r => r.json()).catch(() => []);
+
+  if (sources.length <= 1) { sourceFilters.innerHTML = ""; return; }
+  sourceFilters.innerHTML =
+    '<span class="source-chip active" data-source="">全部</span>' +
+    sources.map(s => `<span class="source-chip" data-source="${escapeHtml(s)}">${escapeHtml(s)}</span>`).join("");
+  sourceFilters.querySelectorAll(".source-chip").forEach(chip => {
+    chip.addEventListener("click", function() {
+      sourceFilters.querySelectorAll(".source-chip").forEach(c => c.classList.remove("active"));
+      this.classList.add("active");
+      currentSource = this.dataset.source;
+      currentPage = 1;
+      search();
+    });
+  });
+}
+
+async function search() {
+  articleList.innerHTML = "";
+  emptyState.style.display = "none";
+  loading.style.display = "block";
+  pagination.style.display = "none";
+
+  let rows, total;
+
+  if (USE_EMBEDDED) {
+    // Client-side search over embedded data
+    await sleep(50); // small delay for loading spinner
+
+    let filtered = embeddedArticles;
+    const q = currentQuery ? currentQuery.toLowerCase() : "";
+
+    if (q) {
+      filtered = embeddedArticles.filter(a =>
+        a.title.toLowerCase().includes(q) ||
+        (a.summary || "").toLowerCase().includes(q) ||
+        (a.keywords || "").toLowerCase().includes(q) ||
+        (a.content || "").toLowerCase().includes(q) ||
+        (a.source_name || "").toLowerCase().includes(q)
+      );
+    }
+    if (currentSource) {
+      filtered = filtered.filter(a => a.source_name === currentSource);
+    }
+
+    total = filtered.length;
+    totalPages = Math.ceil(total / LIMIT) || 1;
+    rows = filtered.slice((currentPage - 1) * LIMIT, currentPage * LIMIT);
+  } else {
+    // API search (local server)
+    try {
+      const params = new URLSearchParams();
+      if (currentQuery) params.set("q", currentQuery);
+      params.set("page", currentPage);
+      params.set("limit", LIMIT);
+      if (currentSource) params.set("source", currentSource);
+
+      const res = await fetch(`/api/search?${params.toString()}`);
+      const data = await res.json();
+      rows = data.rows || [];
+      total = data.total || 0;
+    } catch (err) {
+      console.error("Search error:", err);
+      rows = [];
+      total = 0;
+    }
+  }
+
+  loading.style.display = "none";
+  totalPages = Math.ceil(total / LIMIT) || 1;
+
+  totalCountEl.textContent = total;
+  showCountEl.textContent = rows.length;
+
+  if (rows.length === 0) {
+    emptyState.style.display = "block";
+      if (total === 0 && !currentQuery) {
+        document.querySelector(".empty-state p").textContent = "还没有文章，去管理面板添加吧";
+      }
+      return;
+    }
+
+    rows.forEach(article => {
+      const li = document.createElement("li");
+      li.className = "article-item";
+
+      const titleHtml = highlightText(escapeHtml(article.title), currentQuery);
+      const summaryHtml = article.summary
+        ? highlightText(escapeHtml(highlightNearKeyword(article.summary, currentQuery)), currentQuery)
+        : "";
+
+      // Keywords
+      let kwTags = "";
+      if (article.keywords) {
+        const kws = article.keywords.split(",").filter(Boolean).slice(0, 8);
+        kwTags = '<div class="keywords">' + kws.map(k => {
+          const isMatch = currentQuery && k.includes(currentQuery);
+          return `<span class="tag${isMatch ? ' highlight' : ''}" data-kw="${escapeHtml(k)}">${highlightText(escapeHtml(k), currentQuery)}</span>`;
+        }).join("") + '</div>';
+      }
+
+      li.innerHTML = `
+        <span class="source-tag">${escapeHtml(article.source_name)}</span>
+        <span class="pub-date">${escapeHtml(article.pub_date)}</span>
+        <span class="title">${titleHtml}</span>
+        ${summaryHtml ? `<div class="summary">${summaryHtml}</div>` : ""}
+        ${kwTags}
+      `;
+
+      // Keyword tag click → search
+      li.querySelectorAll(".tag").forEach(tag => {
+        tag.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const kw = tag.dataset.kw;
+          searchInput.value = kw;
+          currentQuery = kw;
+          currentPage = 1;
+          search();
+        });
+      });
+
+      li.addEventListener("click", () => {
+        window.open(article.article_url, "_blank");
+      });
+
+      articleList.appendChild(li);
+    });
+
+    // Pagination
+    pagination.style.display = "flex";
+    pagination.innerHTML = `
+      <button ${currentPage <= 1 ? "disabled" : ""} onclick="goPage(${currentPage - 1})">← 上一页</button>
+      <span class="page-num">第 ${currentPage} / ${totalPages || 1} 页</span>
+      <button ${currentPage >= totalPages ? "disabled" : ""} onclick="goPage(${currentPage + 1})">下一页 →</button>
+    `;
+
+  }
+}
+
+function goPage(page) {
+  if (page < 1 || page > totalPages) return;
+  currentPage = page;
+  search();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  if (page < 1 || page > totalPages) return;
+  currentPage = page;
+  search();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function highlightText(text, keyword) {
+  if (!keyword || !text) return text;
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp("(" + escaped + ")", "gi");
+  return text.replace(re, '<em>$1</em>');
+}
+
+function highlightNearKeyword(text, keyword) {
+  if (!keyword || !text) return text;
+  const idx = text.toLowerCase().indexOf(keyword.toLowerCase());
+  if (idx === -1) return text.length > 200 ? text.slice(0, 200) + "..." : text;
+  const start = Math.max(0, idx - 40);
+  const end = Math.min(text.length, idx + keyword.length + 80);
+  return (start > 0 ? "..." : "") + text.slice(start, end) + (end < text.length ? "..." : "");
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+    e.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+  }
+});
+
+init();
+</script>
+</body>
+</html>

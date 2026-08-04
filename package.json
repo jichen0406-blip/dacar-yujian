@@ -1,0 +1,18 @@
+{
+  "name": "wechat-search",
+  "version": "2.0.0",
+  "description": "WeChat Official Account Article Search Engine with Puppeteer scraping",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@node-rs/jieba-win32-x64-msvc": "^2.0.1",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "puppeteer": "^23.0.0",
+    "sql.js": "^1.11.0"
+  }
+}
