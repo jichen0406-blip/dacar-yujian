@@ -186,7 +186,7 @@
 
 <div class="search-box">
   <span class="search-icon">🔍</span>
-  <input type="text" id="searchInput" placeholder="输入关键词搜索文章..." autofocus autocomplete="off">
+  <input type="text" id="searchInput" placeholder="输入关键词搜索文章（少于2个字显示全部）..." autofocus autocomplete="off">
 </div>
 
 <div class="stats">
@@ -242,7 +242,9 @@ let searchTimer = null;
 searchInput.addEventListener("input", () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
-    currentQuery = searchInput.value.trim();
+    const val = searchInput.value.trim();
+    // Show all articles when query is 1 character or empty
+    currentQuery = val.length >= 2 ? val : "";
     currentPage = 1;
     search();
   }, 300);
