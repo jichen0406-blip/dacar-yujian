@@ -341,7 +341,7 @@ async function search() {
   if (rows.length === 0) {
     emptyState.style.display = "block";
       if (total === 0 && !currentQuery) {
-        document.querySelector(".empty-state p").textContent = "还没有文章，去管理面板添加吧";
+        document.querySelector(".empty-state p").textContent = "还没有文章";
       }
       return;
     }
