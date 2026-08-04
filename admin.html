@@ -215,6 +215,10 @@ https://mp.weixin.qq.com/s/..."></textarea>
   <!-- Recent Articles -->
   <div class="section">
     <h2 class="section-title">📋 最近文章</h2>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <input type="text" id="adminSearchInput" placeholder="按标题、来源或关键字搜索..." style="flex:1;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none;">
+      <span id="filteredCount" style="font-size:13px;color:#999;white-space:nowrap;">-</span>
+    </div>
     <div style="overflow-x:auto;">
       <table>
         <thead>
@@ -264,7 +268,8 @@ async function loadRecentArticles() {
     const data = await res.json();
     const rows = data.rows || [];
     adminTotal = data.total || 0;
-    document.getElementById("filteredCount").textContent = adminTotal;
+    var fc = document.getElementById("filteredCount");
+    if (fc) fc.textContent = adminTotal;
     if (rows.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">暂无文章</td></tr>';
       document.getElementById("adminPagination").innerHTML = '';
@@ -302,6 +307,8 @@ function adminGoPage(page) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  loadStats();
+  loadRecentArticles();
   var searchInput = document.getElementById('adminSearchInput');
   if (searchInput) {
     var timer;
