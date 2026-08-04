@@ -397,4 +397,4 @@ function extractKeywords(title, body) {
   return result;
 }
 
-module.exports = { fetchArticles, closeBrowser };
+module.exports = { fetchArticle, fetchArticles, closeBrowser };

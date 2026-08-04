@@ -54,7 +54,14 @@ function extractIntroFromContent(content) {
     if (!s) continue;
 
     // Check if this sentence is a standalone section header
-    if (s.length < 20 && SECTION_STARTS.test(s) && introSentences.length > 0) {
+    if (s.length < 25 && SECTION_STARTS.test(s) && introSentences.length > 0) {
+      break;
+    }
+
+    // Sentence starts with section boundary keyword like "患者一般情况患者，..." after cleaning
+    const stickyMatch = s.match(/^(病例资料|一般情况|病例简介|病例介绍|病史简介|患者基本情况)(患者|[男女，。，])/);
+    if (stickyMatch && introSentences.length > 1) {
+      // Split out the header and stop before it
       break;
     }
 
