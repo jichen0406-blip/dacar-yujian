@@ -102,7 +102,8 @@ async function fetchArticle(url) {
 
         // Split into sentences and collect the full intro section
         const sentences = cleaned.split(/(?<=[。！？；])/);
-        const SECTION_STARTS = /^(病例资料|一般情况|病例简介|病例介绍|病史简介|辅助检查|现病史|既往史|诊疗经过|入院检查|查体|体格检查|诊断与治疗|开场致辞|病例分享|讨论与|总结|展望|结语|参考文献|声明|来源|编辑|排版|审核|作者|通讯|基金|版权|PART\d+|患者基线|入院前治疗|既往治疗)/;
+        const SECTION_STARTS = /^(病例资料|一般情况|患者一般情况|病例简介|病例介绍|病史简介|辅助检查|现病史|既往史|诊疗经过|入院检查|查体|体格检查|诊断与治疗|开场致辞|病例分享|讨论与|总结|展望|结语|参考文献|声明|来源|编辑|排版|审核|作者|通讯|基金|版权|PART\d+|患者基线|入院前治疗|既往治疗|基线检查)/;
+        const STICKY_SECTION = /^(病例资料|一般情况|患者一般情况|病例简介|病例介绍|病史简介|辅助检查|现病史|既往史|诊疗经过|患者基线|基线检查)(患者|[男女，。，、]|该患者|\d)/;
 
         let startIdx = 0;
         for (let i = 0; i < Math.min(sentences.length, 5); i++) {
@@ -119,7 +120,17 @@ async function fetchArticle(url) {
         for (let i2 = startIdx; i2 < sentences.length; i2++) {
           const s = sentences[i2].trim();
           if (!s) continue;
-          // Standalone section header — stop
+
+          // Sticky section header: "患者一般情况患者，" style — stop before it
+          const stickyMatch = s.match(STICKY_SECTION);
+          if (stickyMatch && introParts.length > 1) {
+            const header = stickyMatch[1];
+            const before = s.slice(0, s.indexOf(header)).trim();
+            if (before) introParts.push(before);
+            break;
+          }
+
+          // Standalone short section header — stop
           if (s.length < 20 && SECTION_STARTS.test(s) && introParts.length > 0) break;
           if (s.length < 10 && /^[^。！？]{2,8}$/.test(s) && introParts.length > 1) break;
           introParts.push(s);
