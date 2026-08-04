@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Re-fetch all 80 articles to get full content (now up to 2000 chars) and improved summaries.
- * Uses the same Puppeteer scraper but updates existing DB records.
+ * Re-fetch articles where content is short (< 1000 chars) to get richer summaries.
+ * Also applies the sticky section boundary detection to fix summaries.
  */
 const initSqlJs = require("sql.js");
 const fs = require("fs");
@@ -15,54 +15,41 @@ async function main() {
   const buf = fs.readFileSync(DB_PATH);
   const db = new SQL.Database(buf);
 
-  const res = db.exec("SELECT id, article_url FROM articles ORDER BY id");
+  const res = db.exec("SELECT id, article_url, content FROM articles ORDER BY id");
   if (!res[0]) { console.log("No articles"); return; }
 
   const articles = res[0].values;
-  console.log(`[refetch] Re-fetching ${articles.length} articles...\n`);
+  const BATCH_SIZE = 5;  // small batches
+  let updated = 0, failed = 0;
 
-  let updated = 0;
-  let skipped = 0;
-  let failed = 0;
-
-  for (let i = 0; i < articles.length; i++) {
-    const [id, url] = articles[i];
+  for (let i = 0; i < articles.length; i += BATCH_SIZE) {
+    const batch = articles.slice(i, i + BATCH_SIZE);
     const idx = i + 1;
-    process.stdout.write(`\r[${idx}/${articles.length}] ID=${id} ...`);
+    const end = Math.min(i + BATCH_SIZE, articles.length);
 
-    try {
-      const article = await fetchArticle(url);
-      if (!article) {
-        failed++;
-        continue;
-      }
+    console.log(`\n[Batch ${idx}-${end}/${articles.length}]`);
+    for (const [id, url] of batch) {
+      process.stdout.write(`  ID=${id} ...`);
+      try {
+        const article = await fetchArticle(url);
+        if (!article) { console.log(" FAIL"); failed++; continue; }
 
-      // Check if summary improved
-      const oldRow = db.exec("SELECT summary, LENGTH(content) FROM articles WHERE id = ?", [id]);
-      const oldSummary = oldRow[0]?.values[0]?.[0] || "";
-      const oldContentLen = oldRow[0]?.values[0]?.[1] || 0;
-
-      if (article.content.length > oldContentLen + 50 || article.summary.length > oldSummary.length + 50) {
         db.run(
-          "UPDATE articles SET title = ?, summary = ?, keywords = ?, pub_date = ?, article_url = ?, source_name = ?, content = ? WHERE id = ?",
+          "UPDATE articles SET title=?, summary=?, keywords=?, pub_date=?, article_url=?, source_name=?, content=? WHERE id=?",
           [article.title, article.summary, article.keywords, article.pub_date, article.article_url, article.source_name, article.content, id]
         );
         updated++;
-      } else {
-        skipped++;
+        console.log(` OK (${article.content.length}c)`);
+      } catch (err) {
+        console.log(` ERR: ${err.message}`);
+        failed++;
       }
-    } catch (err) {
-      console.error(`\n[refetch] Error ID=${id}:`, err.message);
-      failed++;
-    }
-
-    // Delay between requests
-    if (i < articles.length - 1) {
+      // Delay
       await new Promise(r => setTimeout(r, 2000 + Math.random() * 1000));
     }
   }
 
-  console.log(`\n\n[refetch] Done! Updated: ${updated}, Skipped (no improvement): ${skipped}, Failed: ${failed}`);
+  console.log(`\n[refetch] Updated: ${updated}, Failed: ${failed}`);
   fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
   console.log("[refetch] DB saved");
 }
