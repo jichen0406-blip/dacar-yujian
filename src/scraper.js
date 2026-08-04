@@ -99,7 +99,7 @@ async function fetchArticle(url) {
 
         // Split into sentences and collect the full intro section
         const sentences = cleaned.split(/(?<=[。！？；])/);
-        const SECTION_BOUNDARY = /(^(引言?|前言|导读|导语|编者按|编者)$|[.，。！？\n])[ ]*(病例资料|一般情况|病例简介|病例介绍|辅助检查|现病史|既往史|诊疗经过|入院|查体|体格检查|诊断|治疗方案|开场致辞|病例分享|讨论|总结|展望|结语|参考文献|声明|来源|编辑|排版|审核|作者|通讯|基金|版权)/;
+        const SECTION_STARTS = /^(病例资料|一般情况|病例简介|病例介绍|病史简介|辅助检查|现病史|既往史|诊疗经过|入院检查|查体|体格检查|诊断与治疗|开场致辞|病例分享|讨论与|总结|展望|结语|参考文献|声明|来源|编辑|排版|审核|作者|通讯|基金|版权|PART\d+|患者基线|入院前治疗|既往治疗)/;
 
         let startIdx = 0;
         for (let i = 0; i < Math.min(sentences.length, 5); i++) {
@@ -116,8 +116,9 @@ async function fetchArticle(url) {
         for (let i2 = startIdx; i2 < sentences.length; i2++) {
           const s = sentences[i2].trim();
           if (!s) continue;
-          if (SECTION_BOUNDARY.test(s) && introParts.length > 0) break;
-          if (s.length < 15 && /^[^。！？]{2,10}$/.test(s) && introParts.length > 1) break;
+          // Standalone section header — stop
+          if (s.length < 20 && SECTION_STARTS.test(s) && introParts.length > 0) break;
+          if (s.length < 10 && /^[^。！？]{2,8}$/.test(s) && introParts.length > 1) break;
           introParts.push(s);
           if (introParts.join('').length >= 450) break;
         }

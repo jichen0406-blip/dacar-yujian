@@ -10,8 +10,8 @@ const path = require("path");
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const DB_PATH = path.join(PROJECT_ROOT, "data", "wechat-search.db");
 
-// Section boundary markers — when we see these standalone, the intro section ends
-const SECTION_BOUNDARY = /(^(引言?|前言|导读|导语|编者按|编者)$|[.，。！？\n])[ ]*(病例资料|一般情况|病例简介|病例介绍|辅助检查|现病史|既往史|诊疗经过|入院|查体|体格检查|诊断|治疗方案|开场致辞|病例分享|讨论|总结|展望|结语|参考文献|声明|来源|编辑|排版|审核|作者|通讯|基金|版权)/;
+// Section boundary markers — standalone short phrases that end the intro section
+const SECTION_STARTS = /^(病例资料|一般情况|病例简介|病例介绍|病史简介|辅助检查|现病史|既往史|诊疗经过|入院检查|查体|体格检查|诊断与治疗|开场致辞|病例分享|讨论与|总结|展望|结语|参考文献|声明|来源|编辑|排版|审核|作者|通讯|基金|版权|PART\d+|患者基线|入院前治疗|既往治疗)/;
 
 function extractIntroFromContent(content) {
   if (!content) return "";
@@ -47,13 +47,13 @@ function extractIntroFromContent(content) {
     const s = sentences[i].trim();
     if (!s) continue;
 
-    // Check if this sentence starts a new section
-    if (SECTION_BOUNDARY.test(s) && introSentences.length > 0) {
+    // Check if this sentence is a standalone section header (short phrase without punctuation)
+    if (s.length < 20 && SECTION_STARTS.test(s) && introSentences.length > 0) {
       break;
     }
 
-    // Also break on short standalone titles (chapter headers)
-    if (s.length < 15 && /^[^。！？]{2,10}$/.test(s) && introSentences.length > 1) {
+    // Also break on very short standalone titles (chapter headers like "总结", "讨论")
+    if (s.length < 10 && /^[^。！？]{2,8}$/.test(s) && introSentences.length > 1) {
       break;
     }
 
