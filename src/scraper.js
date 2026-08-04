@@ -74,11 +74,54 @@ async function fetchArticle(url) {
         title = document.title.replace(/\s*微信公众平台\s*/g, "").trim();
       }
 
-      // Summary / description
-      const summary =
+      // Summary / description — prefer meta, fall back to intro paragraph from body
+      let summary =
         document.querySelector('meta[name="description"]')?.getAttribute("content") ||
         document.querySelector('meta[property="og:description"]')?.getAttribute("content") ||
         "";
+
+      // Article body
+      const body =
+        document.querySelector("#js_content")?.innerText?.trim() ||
+        document.querySelector(".rich_media_content")?.innerText?.trim() ||
+        "";
+
+      // If meta description is empty or too short, extract intro from body
+      if (!summary || summary.length < 50) {
+        // Clean WeChat formatting artifacts (scattered characters from rich text)
+        const cleaned = body
+          .replace(/([一-鿿])\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*([一-鿿])/g, '$1$2')  // multi-newline in CJK
+          .replace(/([一-鿿])\s*\n\s*\n\s*([一-鿿])/g, '$1$2')   // double-newline in CJK
+          .replace(/([一-鿿])\s*\n\s*([一-鿿])/g, '$1$2')         // single-newline in CJK
+          .replace(/\n{3,}/g, '\n\n')    // collapse multiple newlines
+          .replace(/\n/g, '')            // remove remaining newlines
+          .trim();
+
+        // Find first meaningful paragraph (skip section headers like "引言", "前言" etc.)
+        const paragraphs = cleaned.split(/[。！？]/);
+        let intro = '';
+        let foundHeader = false;
+        for (const p of paragraphs) {
+          const t = p.trim();
+          if (!t) continue;
+          // Skip standalone section headers
+          if (/^(引言?|前言|导读|导语|编者按|编者|摘要|Abstract|Introduction|Intro|病例资料|一般情况|病例简介|病例介绍|患者)$/.test(t)) {
+            foundHeader = true;
+            continue;
+          }
+          if (t.length < 10) continue;
+          intro = t;
+          break;
+        }
+
+        // Build summary: include header if found + intro text
+        if (intro) {
+          summary = cleaned.slice(
+            Math.max(0, cleaned.indexOf(intro) - 20),
+            Math.min(cleaned.length, cleaned.indexOf(intro) + intro.length + 30)
+          ).trim();
+        }
+      }
 
       // Source (公众号 name)
       let source =
@@ -88,7 +131,6 @@ async function fetchArticle(url) {
         document.querySelector('meta[property="og:article:author"]')?.getAttribute("content") ||
         "";
 
-      // Also try profile_nickname
       if (!source) {
         const profileNick = document.querySelector(".profile_nickname");
         if (profileNick) source = profileNick.textContent.trim();
@@ -101,7 +143,6 @@ async function fetchArticle(url) {
         document.querySelector('meta[property="og:article:publish_time"]')?.getAttribute("content") ||
         "";
 
-      // Try to extract date from sibling text nodes
       if (!pubDate) {
         const metaList = document.querySelectorAll(".rich_media_meta_list span, .rich_media_meta_text");
         for (const el of metaList) {
@@ -112,12 +153,6 @@ async function fetchArticle(url) {
           }
         }
       }
-
-      // Article body
-      const body =
-        document.querySelector("#js_content")?.innerText?.trim() ||
-        document.querySelector(".rich_media_content")?.innerText?.trim() ||
-        "";
 
       return { title, summary, source, pubDate, body };
     });
