@@ -95,6 +95,9 @@ async function fetchArticle(url) {
           .replace(/([一-鿿])\s*\n\s*([一-鿿])/g, '$1$2')
           .replace(/\n{3,}/g, '\n\n')
           .replace(/\n/g, '')
+          // Strip WeChat video player junk
+          .replace(/视频加载失败，请刷新页面再试\s*刷新/g, '')
+          .replace(/播放视频.+?(?=[一-鿿A-Za-z])/g, '')
           .trim();
 
         // Split into sentences and collect the full intro section
