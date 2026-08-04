@@ -168,17 +168,9 @@
   <p>粘贴微信公众号文章链接，自动抓取元数据</p>
 </div>
 
-<div class="password-gate" id="passwordGate">
-  <div class="password-card">
-    <h1>🔒 管理面板 — 身份验证</h1>
-    <div class="sub">请输入管理密码以继续</div>
-    <input type="password" id="passwordInput" placeholder="请输入密码" autofocus>
-    <button class="pw-btn" onclick="checkPassword()">验证</button>
-    <div class="pw-error" id="pwError">密码错误，请重试</div>
-  </div>
-</div>
 
-<div class="main" id="mainContent" style="display:none;">
+
+<div class="main" id="mainContent">
   <!-- Stats -->
   <div class="stats-grid">
     <div class="stat-card">
@@ -237,6 +229,7 @@ https://mp.weixin.qq.com/s/..."></textarea>
           <tr><td colspan="4" style="text-align:center;color:#999;">加载中...</td></tr>
         </tbody>
       </table>
+    <div id="adminPagination" style="display:flex;justify-content:center;align-items:center;padding:12px 0;gap:8px;"></div>
     </div>
   </div>
 </div>
@@ -245,21 +238,8 @@ https://mp.weixin.qq.com/s/..."></textarea>
 
 <script>
 // ── Password check ──
-function checkPassword() {
-  const pw = document.getElementById("passwordInput").value;
-  if (pw === "fucaso2026") {
-    document.getElementById("passwordGate").style.display = "none";
-    document.getElementById("mainContent").style.display = "block";
-    loadStats();
-    loadRecentArticles();
-  } else {
-    document.getElementById("pwError").style.display = "block";
-    document.getElementById("passwordInput").value = "";
-    document.getElementById("passwordInput").focus();
-  }
-}
+// password check removed
 
-document.getElementById("passwordInput").addEventListener("keydown", function(e) {
   if (e.key === "Enter") checkPassword();
 });
 
@@ -273,29 +253,70 @@ async function loadStats() {
   } catch (err) { console.error(err); }
 }
 
+let adminPage = 1;
+let adminQuery = '';
+let adminTotal = 0;
+const ADMIN_LIMIT = 20;
+
 async function loadRecentArticles() {
   const tbody = document.getElementById("articlesTableBody");
+  const query = adminQuery ? '&q=' + encodeURIComponent(adminQuery) : '';
   try {
-    const res = await fetch("/api/search?limit=20");
+    const res = await fetch("/api/search?limit=" + ADMIN_LIMIT + "&page=" + adminPage + query);
     const data = await res.json();
     const rows = data.rows || [];
+    adminTotal = data.total || 0;
+    document.getElementById("filteredCount").textContent = adminTotal;
     if (rows.length === 0) {
       tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">暂无文章</td></tr>';
+      document.getElementById("adminPagination").innerHTML = '';
       return;
     }
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.title)}">${escapeHtml(r.title)}</td>
-        <td>${escapeHtml(r.source_name)}</td>
-        <td>${escapeHtml(r.pub_date)}</td>
-        <td><button class="btn-sm" onclick="deleteArticle(${r.id})">删除</button></td>
-      </tr>
-    `).join("");
+    tbody.innerHTML = rows.map(function(r) {
+      return '<tr>' +
+        '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(r.title) + '">' + escapeHtml(r.title) + '</td>' +
+        '<td>' + escapeHtml(r.source_name) + '</td>' +
+        '<td>' + escapeHtml(r.pub_date) + '</td>' +
+        '<td><button class="btn-sm" onclick="deleteArticle(' + r.id + ')">删除</button></td>' +
+      '</tr>';
+    }).join("");
+    renderAdminPagination();
   } catch (err) {
     console.error(err);
     tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#d63031;">加载失败</td></tr>';
   }
 }
+
+function renderAdminPagination() {
+  var totalPages = Math.ceil(adminTotal / ADMIN_LIMIT) || 1;
+  var el = document.getElementById("adminPagination");
+  el.innerHTML = '<button ' + (adminPage <= 1 ? 'disabled' : '') + ' onclick="adminGoPage(' + (adminPage - 1) + ')">← 上一页</button>' +
+    '<span style="margin:0 12px;font-size:14px;color:#666;">第 ' + adminPage + ' / ' + totalPages + ' 页</span>' +
+    '<button ' + (adminPage >= totalPages ? 'disabled' : '') + ' onclick="adminGoPage(' + (adminPage + 1) + ')">下一页 →</button>';
+}
+
+function adminGoPage(page) {
+  var totalPages = Math.ceil(adminTotal / ADMIN_LIMIT) || 1;
+  if (page < 1 || page > totalPages) return;
+  adminPage = page;
+  loadRecentArticles();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var searchInput = document.getElementById('adminSearchInput');
+  if (searchInput) {
+    var timer;
+    searchInput.addEventListener('input', function() {
+      clearTimeout(timer);
+      timer = setTimeout(function() {
+        adminQuery = searchInput.value.trim();
+        adminPage = 1;
+        loadRecentArticles();
+      }, 300);
+    });
+  }
+});
 
 async function handleFetch() {
   const input = document.getElementById("urlInput").value.trim();
