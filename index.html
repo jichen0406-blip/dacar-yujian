@@ -19,9 +19,22 @@
     color: #fff;
     padding: 24px 16px 20px;
     text-align: center;
+    position: relative;
+  }
+  .header .logo {
+    position: absolute;
+    left: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 40px;
+    width: auto;
   }
   .header h1 { font-size: 22px; font-weight: 600; letter-spacing: 2px; }
   .header p { font-size: 13px; opacity: 0.8; margin-top: 6px; }
+  @media (max-width: 480px) {
+    .header .logo { height: 28px; left: 8px; }
+    .header h1 { font-size: 18px; }
+  }
 
   .search-box {
     margin: 16px;
@@ -166,6 +179,7 @@
 <body>
 
 <div class="header">
+  <img class="logo" src="logo.png" alt="驯鹿生物">
   <h1>大CAR愈见</h1>
   <p>CAR-T细胞治疗病例报道检索</p>
 </div>
