@@ -90,36 +90,40 @@ async function fetchArticle(url) {
       if (!summary || summary.length < 50) {
         // Clean WeChat formatting artifacts (scattered characters from rich text)
         const cleaned = body
-          .replace(/([一-鿿])\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*([一-鿿])/g, '$1$2')  // multi-newline in CJK
-          .replace(/([一-鿿])\s*\n\s*\n\s*([一-鿿])/g, '$1$2')   // double-newline in CJK
-          .replace(/([一-鿿])\s*\n\s*([一-鿿])/g, '$1$2')         // single-newline in CJK
-          .replace(/\n{3,}/g, '\n\n')    // collapse multiple newlines
-          .replace(/\n/g, '')            // remove remaining newlines
+          .replace(/([一-鿿])\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*([一-鿿])/g, '$1$2')
+          .replace(/([一-鿿])\s*\n\s*\n\s*([一-鿿])/g, '$1$2')
+          .replace(/([一-鿿])\s*\n\s*([一-鿿])/g, '$1$2')
+          .replace(/\n{3,}/g, '\n\n')
+          .replace(/\n/g, '')
           .trim();
 
-        // Find first meaningful paragraph (skip section headers like "引言", "前言" etc.)
-        const paragraphs = cleaned.split(/[。！？]/);
-        let intro = '';
-        let foundHeader = false;
-        for (const p of paragraphs) {
-          const t = p.trim();
-          if (!t) continue;
-          // Skip standalone section headers
-          if (/^(引言?|前言|导读|导语|编者按|编者|摘要|Abstract|Introduction|Intro|病例资料|一般情况|病例简介|病例介绍|患者)$/.test(t)) {
-            foundHeader = true;
-            continue;
+        // Split into sentences and collect the full intro section
+        const sentences = cleaned.split(/(?<=[。！？；])/);
+        const SECTION_BOUNDARY = /(^(引言?|前言|导读|导语|编者按|编者)$|[.，。！？\n])[ ]*(病例资料|一般情况|病例简介|病例介绍|辅助检查|现病史|既往史|诊疗经过|入院|查体|体格检查|诊断|治疗方案|开场致辞|病例分享|讨论|总结|展望|结语|参考文献|声明|来源|编辑|排版|审核|作者|通讯|基金|版权)/;
+
+        let startIdx = 0;
+        for (let i = 0; i < Math.min(sentences.length, 5); i++) {
+          const s = sentences[i].trim();
+          if (/^(引言?|前言|导读|导语|编者按|编者|摘要|Abstract|Introduction|Intro)$/.test(s)) {
+            startIdx = i + 1;
+          } else if (s.length >= 10 && !/^[A-Za-z\s]+$/.test(s)) {
+            if (startIdx === 0) startIdx = i;
+            break;
           }
-          if (t.length < 10) continue;
-          intro = t;
-          break;
         }
 
-        // Build summary: include header if found + intro text
-        if (intro) {
-          summary = cleaned.slice(
-            Math.max(0, cleaned.indexOf(intro) - 20),
-            Math.min(cleaned.length, cleaned.indexOf(intro) + intro.length + 30)
-          ).trim();
+        let introParts = [];
+        for (let i2 = startIdx; i2 < sentences.length; i2++) {
+          const s = sentences[i2].trim();
+          if (!s) continue;
+          if (SECTION_BOUNDARY.test(s) && introParts.length > 0) break;
+          if (s.length < 15 && /^[^。！？]{2,10}$/.test(s) && introParts.length > 1) break;
+          introParts.push(s);
+          if (introParts.join('').length >= 450) break;
+        }
+
+        if (introParts.length > 0) {
+          summary = introParts.join('').trim().slice(0, 500);
         }
       }
 
