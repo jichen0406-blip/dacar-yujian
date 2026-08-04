@@ -387,7 +387,6 @@ async function search() {
       <button ${currentPage >= totalPages ? "disabled" : ""} onclick="goPage(${currentPage + 1})">下一页 →</button>
     `;
 
-  }
 }
 
 function goPage(page) {
@@ -398,12 +397,6 @@ function goPage(page) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-  if (page < 1 || page > totalPages) return;
-  currentPage = page;
-  search();
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-
 function highlightText(text, keyword) {
   if (!keyword || !text) return text;
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
