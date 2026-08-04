@@ -45,7 +45,7 @@ async function main() {
       const now = new Date();
       const ts = now.toISOString().slice(0, 19).replace("T", " ");
       execSync(`git commit -m "data: ${ts} 文章数据更新"`, { cwd: gitRoot, timeout: 5000 });
-      execSync("git push origin main", { cwd: gitRoot, timeout: 30000 });
+      execSync("git push -u origin main", { cwd: gitRoot, timeout: 30000 });
       console.log("[deploy] Pushed to GitHub");
       res.json({ success: true, url: "https://jichen0406-blip.github.io/dacar-yujian/" });
     } catch (err) {
