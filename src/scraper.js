@@ -181,7 +181,7 @@ async function fetchArticle(url) {
       pub_date: pubDate,
       article_url: normalizedUrl,
       source_name: metadata.source || "未知来源",
-      content: (metadata.body || "").slice(0, 500),
+      content: (metadata.body || "").slice(0, 2000),
     };
 
     return article;
