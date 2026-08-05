@@ -86,9 +86,8 @@ async function fetchArticle(url) {
         document.querySelector(".rich_media_content")?.innerText?.trim() ||
         "";
 
-      // If meta description is empty or too short, extract intro from body
-      if (!summary || summary.length < 50) {
-        // Clean WeChat formatting artifacts (scattered characters from rich text)
+      // Extract intro from body (always preferred over short meta description)
+      if (body && body.length > 0) {
         const cleaned = body
           .replace(/([一-鿿])\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*([一-鿿])/g, '$1$2')
           .replace(/([一-鿿])\s*\n\s*\n\s*([一-鿿])/g, '$1$2')
@@ -100,10 +99,10 @@ async function fetchArticle(url) {
           .replace(/播放视频.+?(?=[一-鿿A-Za-z])/g, '')
           .trim();
 
-        // Simple approach: take first 500 chars of cleaned text
-        // This captures the full intro section naturally
+        // Take first 500 chars of cleaned text, falling back to meta if body is too short
         summary = cleaned.slice(0, 500);
       }
+      // Fallback: keep meta description if body extraction is empty
 
       // Source (公众号 name)
       let source =
