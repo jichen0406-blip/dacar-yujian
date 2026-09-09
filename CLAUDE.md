@@ -21,11 +21,13 @@ wechat-search/
 ├── scripts/
 │   ├── build-data.js           # 从 DB 生成 articles-data.js
 │   ├── backup-db.js            # 备份数据库（带轮转，最多 10 个）
-│   └── fix-summaries.js        # 从正文提取/修复文章摘要
+│   ├── fix-summaries.js        # 从正文提取/修复文章摘要
+│   └── fix-keywords.js         # 重跑医生名+医院名关键词
 └── src/
     ├── index.js                # Express 服务入口
     ├── config.js               # 端口、数据目录、Puppeteer 配置
-    ├── scraper.js              # Puppeteer 抓取：标题、摘要、来源、日期、关键词
+    ├── scraper.js              # Puppeteer 抓取：标题、摘要、来源、日期
+    ├── keywords.js             # 关键词提取：医生名（中/英）+ 医院名
     ├── db/
     │   ├── connection.js       # sql.js 初始化与持久化
     │   ├── schema.js           # 建表语句
@@ -41,7 +43,7 @@ wechat-search/
 | 组件 | 技术 |
 |------|------|
 | 抓取 | Puppeteer (headless Chrome) |
-| 中文分词 | @node-rs/jieba |
+| 关键词提取 | 正则匹配医生名（中/英）+ 医院名；@node-rs/jieba 仅作兜底 |
 | 数据库 | sql.js (WASM SQLite) |
 | 后端 | Express.js |
 | 前端 | 纯 HTML/CSS/JS（双模式：嵌入式数据 / API） |
@@ -148,14 +150,12 @@ Puppeteer 无头浏览器抓取微信文章元数据。核心流程：
 1. 启动/复用 Chrome 实例，拦截图片/字体/媒体资源加速加载
 2. 导航至微信文章链接，等待 `#js_content` 等关键元素
 3. 从 DOM 提取：`og:title` → 标题，`meta[name="description"]` → 摘要，`#js_name` → 公众号名，`#publish_time` → 日期，`#js_content` → 正文
-4. 若 meta description 为空或过短（< 50 字符），从正文开头提取引言作为摘要：
-   - 清理微信富文本格式杂质（分散换行符）
-   - 移除视频播放器残留文本
-   - 直接截取前 500 字符
-5. 关键词提取：
-   - Jieba 分词正文（权重 ×1）+ 标题（权重 ×3）
-   - N-gram（3-4 字）挖掘身体文本中的医学复合词（出现 ≥2 次）
-   - 去停用词 → 去重子串 → 取前 10 个
+4. 摘要提取：只要正文非空，始终从正文开头提取引言（清洗微信格式杂质、移除视频播放器残留文本后截取前 500 字符），meta description 仅在正文为空时兜底
+5. 关键词提取（[src/keywords.js](src/keywords.js)）：以「医生姓名 + 医院名称」为主
+   - 中文医生名：2-3 字姓名紧贴头衔词（教授/主任医师/博士/医师等）作锚点，再剥除被贪心匹配带上的部门/连接字
+   - 英文医生名：首字母大写的姓名序列（Kenneth C. Anderson、Wee Joo Chng、Dr.Chutima Kunacheewa），过滤普通英文词
+   - 医院名：以医院/医学院/研究所等后缀锚定，在连续汉字串内向右回退到分隔字之后取整名
+   - 标题中的讲者优先 → 标题医院 → 正文医生 → 正文医院，去重后上限 10 个；完全无专家名时才用 jieba 兜底
 6. URL 标准化：仅保留 `__biz/mid/idx/sn` 参数
 7. 多篇抓取间隔 2 秒（可配置），避免被反爬
 
@@ -258,19 +258,30 @@ if (backups.length > 10) { /* 删除最旧的 */ }
 - 检测段落边界标志（病例资料/一般情况/辅助检查等）
 - 处理粘性标题（"患者一般情况患者，女性..."嵌入场景）
 
-### 关键词提取（[src/scraper.js](src/scraper.js#L276-L372)）
+**[scripts/fix-keywords.js](scripts/fix-keywords.js)** — 重跑已有文章的关键词：
+```js
+const { extractKeywords } = require("../src/keywords");
+// 对每篇文章：UPDATE articles SET keywords = extractKeywords(title, content).join(",")
+```
+
+### 关键词提取（[src/keywords.js](src/keywords.js)）
+
+以「医生姓名 + 医院名称」为关键词主体，聚焦"谁在分享、来自哪家医院"：
 
 ```js
-function extractKeywords(title, body) {
-  // Step 1: Jieba 分词正文（前 2000 字符）
-  for (const w of j.cut(bodyText)) {
-    if (w.length < 2 || stopwords.has(w)) continue;
-    freq[w] = (freq[w] || 0) + 1;
-  }
-  // Step 2: 标题分词（3 倍权重）
-  // Step 3: 3-4 字 N-gram 发现 Jieba 遗漏的医学复合词
-  // Step 4: 去重子串（若已有关键词包含当前词则跳过）
-}
+// 中文医生名：头衔词作锚点（贪婪会带上前面字，需剥前缀）
+const CN_DOCTOR = /[一-鿿]{1,3}(?:教授|主任医师|主治医师|医师|博士|院长|研究员|导师)/g;
+// name = token 去头衔后，剥除部门/连接前缀（院/科/邀/由…），黑名单过滤伪名
+
+// 英文医生名：首字母大写姓名序列，支持 Dr./Prof. 前缀、全大写姓（CHNG）
+const EN_NAME_TOKEN =
+  /(?:[A-Z][a-z]+(?:\s+(?:[A-Z]\.|[A-Z][a-z]+|[A-Z]{2,}))+|...)/g;
+
+// 医院名：后缀锚定后，在连续汉字串里向右回退到分隔字（于/在/由/…）之后
+// 注意：紧贴后缀的字（协和|医院 的"和"）属于医院名，不可当分隔符
+const HOSP_SUFFIX = /(?:医院|医学院|医学中心|研究所|研究院|...)$/;
+
+// 排序：标题讲者 → 标题医院 → 正文医生 → 正文医院；上限 10；全空才 jieba 兜底
 ```
 
 ## 环境变量（.env）
@@ -325,6 +336,7 @@ npm run dev         # 带 --watch 自动重启
 node scripts/build-data.js     # 从数据库构建静态数据文件
 node scripts/backup-db.js      # 备份数据库（保留最近 10 个）
 node scripts/fix-summaries.js  # 修复/改善已有文章摘要
+node scripts/fix-keywords.js   # 重跑医生名+医院名关键词
 
 # 服务器端部署（POST 触发，同 admin.html 中的「部署到线上」按钮）
 curl -X POST http://localhost:3000/api/deploy
@@ -376,12 +388,15 @@ curl -X POST http://localhost:3000/api/deploy
 - **CDN 缓存**：GitHub Pages CDN 缓存 `max-age=600`（10 分钟），部署后需等待 1-2 分钟才能看到更新。排查"手机端没更新"时优先考虑缓存。
 - **静态数据文件**：80 篇文章生成 `articles-data.js` 约 145KB，每次部署需重新构建。
 
-### 中文关键词提取
+### 关键词提取：医生名 + 医院名
 
-- **Jieba 分词**作为基础切词器，但对医学专有名词（药物名、靶点、治疗方案）覆盖率有限。
-- **N-gram 补偿**：对 3-4 字 N-gram 出现 ≥2 次的词额外加权，捕获 Jieba 遗漏的复合词。
-- **去重策略**：若候选词是已选关键词的子串则跳过（如已选"CAR-T细胞治疗"，则跳过"CAR-T"），避免冗余。
-- **停用词**：维护针对医学文献的扩展停用词表，排除"患者"、"治疗"、"细胞"等高频但区分度低的词。
+- **需求驱动**：早期用 jieba 分词 + n-gram，产出大量碎片（"多发性骨""爱斌教授""江大学医"），无法点击检索到"谁在分享、来自哪家医院"。改版后关键词以医生全名 + 医院全名为准。
+- **中文医生名**：以头衔词（教授/主任医师/博士…）作锚点反推姓名，天然避开分词难题。但贪婪匹配会把前面的部门字带上（"医院血液科冯茹教授" → 抓到"科冯茹"），需要剥除前缀垃圾字（院/科/邀/由…）。**黑名单排除伪名**：科室主任、临床医师、城市名（北京/上海…）等。
+- **英文医生名**：标题大写的姓名序列，需兼容 `Dr.X`（无空格）、全大写姓（`Wee Joo CHNG`）、教授/学位尾缀；用常见学术词停用表（Antigen、Year、Session…）过滤非人名短语。
+- **医院名**：以医院/医学院/研究所后缀锚定。关键坑——医院名内部可能含连词字："协和医院"的"和"、以及"中"（中国医学科学院）等，不能一律当分隔符；正确做法是取连续汉字串里**分隔字之后、且紧贴后缀的分隔字跳过**的整段。
+- **排序**：标题里的讲者权重最高（核心汇报人），正文里遇到的医生/医院按出现先后入列，去重去包含子串后截 10 个。
+- **兜底**：正文确无专家名的会议新闻稿才回退 jieba，避免关键词为空。
+- **历史数据**：`node scripts/fix-keywords.js` 用正文 content 重跑全部文章（90 篇一次通过），无需重新抓取。
 
 ## 注意事项
 

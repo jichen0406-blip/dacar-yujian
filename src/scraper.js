@@ -4,6 +4,7 @@
  * extracts title / summary / source / pub_date / content / keywords.
  */
 const config = require("./config");
+const { extractKeywords } = require("./keywords");
 
 let browser = null;
 
@@ -264,110 +265,6 @@ function parseChineseDate(text) {
   if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
 
   return now.toISOString().slice(0, 10);
-}
-
-/**
- * Extract Chinese keywords from title and body text.
- * Jieba segments body for common terms; n-grams from title capture proper nouns
- * (drug names etc.) that jieba's dictionary lacks; then dedup + filter.
- */
-let _jieba = null;
-
-function getJieba() {
-  if (_jieba) return _jieba;
-  const { Jieba } = require("@node-rs/jieba");
-  const fs = require("fs");
-  const path = require("path");
-  const j = new Jieba();
-  const dictPath = path.join(
-    path.dirname(require.resolve("@node-rs/jieba/package.json")),
-    "dict.txt"
-  );
-  j.loadDict(new Uint8Array(fs.readFileSync(dictPath)));
-  _jieba = j;
-  return j;
-}
-
-function extractKeywords(title, body) {
-  const j = getJieba();
-
-  const stopwords = new Set([
-    "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都", "一",
-    "个", "上", "也", "很", "到", "说", "要", "去", "你", "会", "着", "没有",
-    "看", "好", "自己", "这", "他", "她", "它", "们", "那", "些", "所", "为",
-    "因为", "所以", "但是", "然而", "而且", "可以", "这个", "那个", "什么",
-    "怎么", "如何", "哪", "吗", "呢", "啊", "吧", "哦", "嗯", "与", "及", "或",
-    "对", "从", "被", "把", "向", "将", "以", "让", "给", "于", "则", "其",
-    "中", "等", "更", "已", "还", "又", "再", "能", "该", "应", "可", "后",
-    "前", "里", "外", "上", "下", "大", "小", "多", "少", "来", "去", "出",
-    "进", "过", "回", "开", "关", "用", "做", "种", "次", "月", "日", "年",
-    "时", "分", "期", "至", "并", "而", "且", "但", "或", "虽", "若", "如",
-    "当", "因", "故", "此", "之", "其", "者", "仅", "仍", "常", "需", "无",
-    "相对", "通过", "进行", "出现", "发生", "包括", "相关", "目前",
-    "本文", "来源", "编辑", "排版", "审核", "声明",
-    "仅供", "参考", "内容", "成为", "第一", "部分", "医药", "平台", "媒体",
-    "文章", "研究", "结果", "方法", "讨论", "结论", "背景",
-    "特邀", "专家", "教授", "分享", "邀请", "本期", "病例",
-    "医院", "大学", "附属", "科室", "血液", "主任", "医师", "副主任",
-    "报告", "主要", "方案", "分别为", "分为", "显示", "提示", "表明", "未见",
-    "其中", "同时", "此外", "最后", "如有", "谢谢",
-    "患者", "治疗", "细胞", "蛋白",
-    "患者的", "治疗的", "医院的", "教授的", "特邀",
-  ]);
-
-  const freq = {};
-
-  // ── Step 1: Jieba segment body text ──
-  const bodyText = (body || "").slice(0, 2000);
-  for (const w of j.cut(bodyText)) {
-    if (w.length < 2) continue;
-    if (stopwords.has(w)) continue;
-    if (!/[一-鿿]/.test(w) && !/^[A-Za-z]/.test(w)) continue;
-    freq[w] = (freq[w] || 0) + 1;
-  }
-
-  // ── Step 2: Title — jieba cut (higher weight) ──
-  for (const w of j.cut(title || "")) {
-    if (w.length < 2) continue;
-    if (stopwords.has(w)) continue;
-    if (!/[一-鿿]/.test(w)) continue;
-    freq[w] = (freq[w] || 0) + 3;
-  }
-
-  // ── Step 3: N-gram mining from body to capture medical compounds ──
-  // 3-4 char n-grams appearing 2+ times (drug names/proper nouns jieba misses)
-  const bodyCN = (body || "").slice(0, 2000).replace(/[^一-鿿]/g, "");
-  const bodyNGrams = {};
-  for (let i = 0; i < bodyCN.length; i++) {
-    for (let len = 3; len <= 4 && i + len <= bodyCN.length; len++) {
-      const ng = bodyCN.slice(i, i + len);
-      if (!stopwords.has(ng)) {
-        bodyNGrams[ng] = (bodyNGrams[ng] || 0) + 1;
-      }
-    }
-  }
-  for (const [ng, count] of Object.entries(bodyNGrams)) {
-    if (count >= 2) {
-      freq[ng] = (freq[ng] || 0) + count * ng.length;
-    }
-  }
-
-  // ── Step 4: Dedup substrings ──
-  const candidates = Object.entries(freq)
-    .filter(([k]) => k.length >= 2 && !stopwords.has(k))
-    .sort((a, b) => b[1] - a[1]);
-
-  const result = [];
-  for (const [word, score] of candidates) {
-    // Skip if this word is a substring of an already-selected higher-ranked keyword
-    const isSubstring = result.some(r => r !== word && r.includes(word));
-    if (!isSubstring) {
-      result.push(word);
-    }
-    if (result.length >= 10) break;
-  }
-
-  return result;
 }
 
 module.exports = { fetchArticle, fetchArticles, closeBrowser };
