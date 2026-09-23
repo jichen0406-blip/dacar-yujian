@@ -24,10 +24,10 @@ async function main() {
   let updated = 0;
   for (const [id, title, content, oldKw] of res[0].values) {
     const kw = extractKeywords(title || "", content || "").join(",");
-    if (kw && kw !== oldKw) {
-      db.run("UPDATE articles SET keywords = ? WHERE id = ?", [kw, id]);
-      updated++;
-    }
+    // 空结果也要写回（清掉旧噪音），故不能用 `if (kw && ...)` 拦掉
+    if (kw === oldKw) continue;
+    db.run("UPDATE articles SET keywords = ? WHERE id = ?", [kw, id]);
+    updated++;
   }
 
   console.log(`[fix-keywords] Updated ${updated} of ${res[0].values.length} articles`);

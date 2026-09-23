@@ -398,7 +398,11 @@ function extractKeywords(title, body) {
   );
   if (keywords.length >= 1) return keywords.slice(0, 10);
 
-  // No structured matches at all — fall back to legacy segmentation.
+  // 无结构化匹配时用 jieba 兜底。但正文过短（只填了标题、正文是「文章详情」
+  // 这类占位符的空壳文章）切出来全是「倾听/临床/声音」泛词，不如不产出，
+  // 留空反而能暴露数据问题。
+  if (String(b).length < 50) return [];
+
   return legacyExtract(t, b);
 }
 
