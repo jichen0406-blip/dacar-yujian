@@ -18,8 +18,9 @@ const CN_DOCTOR = /[一-鿿]{1,3}(?:教授|主任医师|副主任医师|主治�
 
 // Leading chars that are never part of a person's name; stripped from the
 // front of a candidate when greedy matching glued preceding context onto it.
-// 于/向 excluded — they are real surnames in this corpus (于滕滕、向茜茜).
-const CN_NAME_LEAD_JUNK = /^[院科室医附血液辞词到邀请特与及和并或让在把者将等这那该各其会届位名患被的了经新由助临内病骨髓肿瘤免疫治疗研究护理主外骨神精心脏肝肾皮妇产儿眼检影放麻急康复药化]*/;
+// 于/向 excluded — they are real surnames in this corpus (于滕滕、向茜茜)。
+// 丨 是标题分隔符（「大CAR愈见丨安刚教授」），必须剥离，否则会与「安刚」共存并被去重误删。
+const CN_NAME_LEAD_JUNK = /^[院科室医附血液辞词到邀请特与及和并或让在把者将等这那该各其会届位名患被的了经新由助临内病骨髓肿瘤免疫治疗研究护理主外骨神精心脏肝肾皮妇产儿眼检影放麻急康复药化国丨·、，。]+/;
 
 const CN_NAME_TRAIL_JUNK = /[的了等和与及并其之该各位名中上内处人员数]+$/;
 
@@ -42,6 +43,11 @@ const CN_BARE_REJECT = new Set([
   "福州", "厦门", "苏州", "温州", "宁波", "佛山",
 ]);
 
+const CN_TITLE_SUFFIX = /(教授|主任医师|副主任医师|主治医师|住院医师|主任|医师|博士|院长|研究员|导师)$/;
+
+// 数量词误匹配：真实姓名不含「多位/各位/数名」这类量词
+const CN_QUANTIFIER = /(?:^|[多各数几])[位名]$/;
+
 function extractCnDoctors(text) {
   const out = [];
   if (!text) return out;
@@ -51,10 +57,10 @@ function extractCnDoctors(text) {
     const token = m[0];
     if (CN_TOKEN_BLACKLIST.has(token)) continue;
 
-    let name = token
-      .replace(/(教授|主任医师|副主任医师|主治医师|住院医师|主任|医师|博士|院长|研究员|导师)$/, "")
-      .replace(CN_NAME_LEAD_JUNK, "")
-      .replace(CN_NAME_TRAIL_JUNK, "");
+    const raw = token.replace(CN_TITLE_SUFFIX, "");
+    if (CN_QUANTIFIER.test(raw)) continue;   // 「华西多位教授」「各位教授」
+
+    let name = raw.replace(CN_NAME_LEAD_JUNK, "").replace(CN_NAME_TRAIL_JUNK, "");
 
     if (name.length < 2 || name.length > 4) continue;
     if (CN_BARE_REJECT.has(name)) continue;
@@ -65,8 +71,9 @@ function extractCnDoctors(text) {
 }
 
 // ── EN doctor name extraction ──
+// 支持连字符姓氏（Al-Shemmari）、缩写（H. / C.）、全大写姓（CHNG）
 const EN_NAME_TOKEN =
-  /(?:[A-Z][a-z]+(?:\.[A-Z][a-z]+)?(?:\s+(?:[A-Z]\.|[A-Z][a-z]+|[A-Z]{2,}))+|[A-Z][a-z]+\.[A-Z][a-z]+)/g;
+  /(?:[A-Z][a-z]+(?:-[A-Z][a-z]+)?(?:\.[A-Z][a-z]+)?(?:\s+(?:[A-Z]\.|[A-Z][a-z]+(?:-[A-Z][a-z]+)?|[A-Z]{2,}))+|[A-Z][a-z]+\.[A-Z][a-z]+)/g;
 
 const EN_STOP = new Set([
   "The", "This", "These", "Those", "And", "Or", "But", "For", "With", "From",
@@ -135,6 +142,9 @@ const HOSP_FRAME = new Set([
 // (中/华/上/南/北/广/深/常/军/解/人…) are intentionally NOT here.
 const HOSP_LEAD_JUNK = /^[展势多许各外进近了就来前后位本这那的等所内肿瘤科室优加至之已未仅需时仍现使由特邀请与及和并在把被将向自收治作于出而到让经主研要究者关为针探揭示表明显提改善促包参]*/;
 
+// 泛指而非具体机构（「中国医院」「当地医院」），不是机构专名
+const HOSP_GENERIC = /^(?:中国|国内|全国|当地|该|本|某|我市|海外|国外|外省|境外|各大|一家)(?:医院|医学院|医学中心|研究所|研究院)$/;
+
 // An already-kept name; drop new candidates that are substrings of it.
 function dedupLongest(list) {
   const kept = [];
@@ -169,6 +179,7 @@ function extractHospitals(text) {
       .replace(/医院医院$/, "医院");
     if (name.length < 4 || name.length > 22) continue;
     if (name.includes("某") || name.includes("另一") || name.includes("国内外")) continue;
+    if (HOSP_GENERIC.test(name)) continue;   // 「中国医院」这类泛指，非具体机构
     found.push(name);
   }
 
@@ -244,9 +255,112 @@ function legacyExtract(title, body) {
   return result;
 }
 
+// ── 国家 / 非大陆地区 ──
+
 /**
- * Extract keywords — doctor names and hospitals first (title speakers first),
- * falling back to legacy jieba segmentation when too few matches.
+ * [规范名, [别名...]]
+ * 刻意不含「中国」：它出现在 50/95 篇文章里，作为关键词没有区分度。
+ * 港澳台按「中国XX」归一，与主权国家一同作为「国家/地区」提取。
+ */
+const COUNTRY_ALIASES = [
+  ["美国", ["美国", "美利坚"]],
+  ["英国", ["英国"]],
+  ["法国", ["法国"]],
+  ["德国", ["德国"]],
+  ["意大利", ["意大利"]],
+  ["西班牙", ["西班牙"]],
+  ["葡萄牙", ["葡萄牙"]],
+  ["荷兰", ["荷兰"]],
+  ["比利时", ["比利时"]],
+  ["瑞士", ["瑞士"]],
+  ["瑞典", ["瑞典"]],
+  ["奥地利", ["奥地利"]],
+  ["丹麦", ["丹麦"]],
+  ["挪威", ["挪威"]],
+  ["芬兰", ["芬兰"]],
+  ["波兰", ["波兰"]],
+  ["希腊", ["希腊"]],
+  ["爱尔兰", ["爱尔兰"]],
+  ["捷克", ["捷克"]],
+  ["俄罗斯", ["俄罗斯"]],
+  ["乌克兰", ["乌克兰"]],
+  ["土耳其", ["土耳其"]],
+  ["以色列", ["以色列"]],
+  ["沙特阿拉伯", ["沙特阿拉伯", "沙特"]],
+  ["阿联酋", ["阿联酋", "阿拉伯联合酋长国"]],
+  ["卡塔尔", ["卡塔尔"]],
+  ["科威特", ["科威特"]],
+  ["阿曼", ["阿曼"]],
+  ["巴林", ["巴林"]],
+  ["约旦", ["约旦"]],
+  ["黎巴嫩", ["黎巴嫩"]],
+  ["伊朗", ["伊朗"]],
+  ["伊拉克", ["伊拉克"]],
+  ["埃及", ["埃及"]],
+  ["南非", ["南非"]],
+  ["印度", ["印度"]],
+  ["印度尼西亚", ["印度尼西亚", "印尼"]],
+  ["巴基斯坦", ["巴基斯坦"]],
+  ["孟加拉国", ["孟加拉国", "孟加拉"]],
+  ["斯里兰卡", ["斯里兰卡"]],
+  ["尼泊尔", ["尼泊尔"]],
+  ["泰国", ["泰国"]],
+  ["越南", ["越南"]],
+  ["马来西亚", ["马来西亚"]],
+  ["新加坡", ["新加坡"]],
+  ["菲律宾", ["菲律宾"]],
+  ["缅甸", ["缅甸"]],
+  ["柬埔寨", ["柬埔寨"]],
+  ["老挝", ["老挝"]],
+  ["文莱", ["文莱"]],
+  ["蒙古", ["蒙古"]],
+  ["哈萨克斯坦", ["哈萨克斯坦"]],
+  ["乌兹别克斯坦", ["乌兹别克斯坦"]],
+  ["日本", ["日本"]],
+  ["韩国", ["韩国", "南韩"]],
+  ["朝鲜", ["朝鲜"]],
+  ["澳大利亚", ["澳大利亚", "澳洲"]],
+  ["新西兰", ["新西兰"]],
+  ["加拿大", ["加拿大"]],
+  ["墨西哥", ["墨西哥"]],
+  ["巴西", ["巴西"]],
+  ["阿根廷", ["阿根廷"]],
+  ["智利", ["智利"]],
+  ["哥伦比亚", ["哥伦比亚"]],
+  ["秘鲁", ["秘鲁"]],
+  // 非大陆地区
+  ["中国香港", ["中国香港", "香港"]],
+  ["中国澳门", ["中国澳门", "澳门"]],
+  ["中国台湾", ["中国台湾", "台湾"]],
+];
+
+// 按别名长度降序：保证「印度尼西亚」先于「印度」、「中国香港」先于「香港」
+const COUNTRY_LOOKUP = COUNTRY_ALIASES
+  .flatMap(([canon, aliases]) => aliases.map(a => [a, canon]))
+  .sort((a, b) => b[0].length - a[0].length);
+
+function extractCountries(text) {
+  const out = [];
+  if (!text) return out;
+  let s = collapseWS(text);
+  const hits = [];
+
+  for (const [alias, canon] of COUNTRY_LOOKUP) {
+    const idx = s.indexOf(alias);
+    if (idx === -1) continue;
+    hits.push({ canon, pos: idx });
+    // 抠掉已匹配片段（等长填充，位置不变），避免「印度尼西亚」里再匹配出「印度」
+    s = s.split(alias).join("\u0000".repeat(alias.length));
+  }
+
+  hits.sort((a, b) => a.pos - b.pos);   // 按原文出现顺序
+  for (const h of hits) if (out.indexOf(h.canon) === -1) out.push(h.canon);
+  return out;
+}
+
+/**
+ * Extract keywords — doctor names, then countries/regions, then hospitals
+ * (title first); falls back to legacy jieba segmentation only when nothing matched.
  * @returns {string[]} up to 10 keywords
  */
 function extractKeywords(title, body) {
@@ -263,20 +377,35 @@ function extractKeywords(title, body) {
     }
   };
 
-  // Title speakers (core presenters) first, then title hospitals,
-  // then body doctors, then body hospitals.
+  // 标题优先（核心汇报人 / 主办地），再正文；每层内：医生名 → 国家/地区 → 医院
+  const countryHits = new Set();
+  const pushCountries = arr => { for (const c of arr) countryHits.add(c); push(arr); };
+
   push(extractCnDoctors(t));
   push(extractEnDoctors(t));
+  pushCountries(extractCountries(t));
   push(extractHospitals(t));
   push(extractCnDoctors(b));
   push(extractEnDoctors(b));
+  pushCountries(extractCountries(b));
   push(extractHospitals(b));
 
-  const keywords = [...seen];
+  const all = [...seen];
+  // 子串去重：「华西」⊂「华西医院」时只留长者。
+  // 国家/地区豁免，否则「美国」会被「美国哈佛医学院」吞掉。
+  const keywords = all.filter(
+    k => countryHits.has(k) || !all.some(o => o !== k && o.includes(k))
+  );
   if (keywords.length >= 1) return keywords.slice(0, 10);
 
   // No structured matches at all — fall back to legacy segmentation.
   return legacyExtract(t, b);
 }
 
-module.exports = { extractKeywords, extractCnDoctors, extractEnDoctors, extractHospitals };
+module.exports = {
+  extractKeywords,
+  extractCnDoctors,
+  extractEnDoctors,
+  extractCountries,
+  extractHospitals,
+};
