@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'">
+<title>文章详情 — 大CAR愈见</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: #f5f5f5;
+    color: #333;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .header {
+    background: linear-gradient(135deg, #1b2f4a 0%, #0d1b2d 100%);
+    color: #fff;
+    padding: 24px 16px 20px;
+    text-align: center;
+    position: relative;
+  }
+  .header .logo {
+    position: absolute;
+    left: 16px; top: 50%;
+    transform: translateY(-50%);
+    height: 80px; width: auto;
+  }
+  .header h1 { font-size: 22px; font-weight: 600; letter-spacing: 2px; }
+  .header p { font-size: 13px; opacity: 0.8; margin-top: 6px; }
+  @media (max-width: 480px) {
+    .header .logo { height: 56px; left: 8px; }
+    .header h1 { font-size: 18px; }
+  }
+
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 20px 16px 8px;
+  }
+
+  .article {
+    background: #fff;
+    border-radius: 10px;
+    padding: 24px 22px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  .meta { margin-bottom: 10px; }
+  .source-tag {
+    display: inline-block; font-size: 11px; color: #1b2f4a;
+    background: #e8f0f8; padding: 2px 8px; border-radius: 10px; margin-right: 8px;
+  }
+  .pub-date { font-size: 11px; color: #aaa; }
+  .updated { font-size: 11px; color: #bbb; margin-left: 8px; }
+
+  .article h1.title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1b2f4a;
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+
+  .summary {
+    font-size: 13px;
+    color: #666;
+    padding: 10px 12px;
+    background: #fafaf5;
+    border-left: 3px solid #ddd;
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 14px;
+    line-height: 1.7;
+  }
+
+  .keywords { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+  .keywords .tag {
+    font-size: 11px; color: #666; background: #f0f0f0;
+    padding: 3px 8px; border-radius: 4px; text-decoration: none;
+    transition: background 0.15s, color 0.15s;
+  }
+  .keywords .tag:hover { background: #e0e0e0; color: #333; }
+
+  .content {
+    font-size: 15px;
+    line-height: 1.9;
+    color: #333;
+    word-break: break-word;
+  }
+  .content p { margin-bottom: 14px; }
+  .content h1, .content h2, .content h3, .content h4 { color: #1b2f4a; margin: 20px 0 10px; line-height: 1.5; }
+  .content h2 { font-size: 18px; }
+  .content h3 { font-size: 16px; }
+  .content img { max-width: 100%; height: auto; display: block; margin: 14px auto; border-radius: 6px; }
+  .content ul, .content ol { margin: 0 0 14px 22px; }
+  .content li { margin-bottom: 6px; }
+  .content blockquote {
+    border-left: 3px solid #ddd; padding: 4px 12px;
+    color: #666; background: #fafaf5; margin-bottom: 14px;
+  }
+  .content a { color: #1b2f4a; }
+  .content table { border-collapse: collapse; width: 100%; margin-bottom: 14px; font-size: 13px; }
+  .content th, .content td { border: 1px solid #e8e8e8; padding: 6px 10px; }
+  .content th { background: #f7f7f7; }
+
+  .original {
+    display: none;
+    margin-top: 24px; padding-top: 18px;
+    border-top: 1px solid #f0f0f0;
+  }
+  .original a {
+    display: inline-block; padding: 10px 22px; border-radius: 20px;
+    background: #1b2f4a; color: #fff; text-decoration: none; font-size: 14px;
+  }
+  .original a:hover { background: #0d1b2d; }
+
+  .nav-link { text-align: center; padding: 18px 16px 8px; }
+  .nav-link a { color: #1b2f4a; text-decoration: none; font-size: 13px; }
+  .nav-link a:hover { text-decoration: underline; }
+
+  .footer { text-align: center; padding: 12px 16px 32px; font-size: 12px; color: #bbb; }
+
+  .state { text-align: center; padding: 60px 16px; color: #999; font-size: 14px; }
+  .state .spinner {
+    width: 32px; height: 32px; border: 3px solid #e0e0e0;
+    border-top-color: #1b2f4a; border-radius: 50%;
+    margin: 0 auto 12px; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <img class="logo" src="logo.png" alt="驯鹿生物">
+  <h1>大CAR愈见</h1>
+  <p>CAR-T细胞治疗病例报道检索</p>
+</div>
+
+<div class="wrap">
+  <div id="state" class="state">
+    <div class="spinner"></div>
+    <p>加载中...</p>
+  </div>
+
+  <div class="article" id="articleWrap" style="display:none">
+    <div class="meta">
+      <span class="source-tag" id="aSource"></span>
+      <span class="pub-date" id="aDate"></span>
+      <span class="updated" id="aUpdated"></span>
+    </div>
+    <h1 class="title" id="aTitle"></h1>
+    <div class="summary" id="aSummary" style="display:none"></div>
+    <div class="keywords" id="aKeywords"></div>
+    <div class="content" id="aContent"></div>
+    <div class="original" id="aOriginal">
+      <a id="aOriginalLink" href="#" target="_blank" rel="noopener noreferrer">阅读原文 ↗</a>
+    </div>
+  </div>
+</div>
+
+<div class="nav-link"><a href="index.html">🔍 返回搜索</a></div>
+<div class="footer">大CAR愈见 — CAR-T细胞治疗病例报道检索</div>
+
+<!-- Embedded articles data for GitHub Pages (generated by build-data.js) -->
+<script src="articles-data.js"></script>
+
+<script>
+// ── 取数模式：本地服务器走 API（拿实时数据），线上走嵌入式快照 ──
+const IS_LOCAL_SERVER = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(location.hostname);
+const HAS_EMBEDDED = typeof window.__ARTICLES__ !== "undefined"
+  && Array.isArray(window.__ARTICLES__) && window.__ARTICLES__.length > 0;
+const USE_EMBEDDED = !IS_LOCAL_SERVER && HAS_EMBEDDED;
+const embeddedArticles = USE_EMBEDDED ? window.__ARTICLES__ : [];
+
+const articleId = new URLSearchParams(location.search).get("id");
+
+const el = id => document.getElementById(id);
+
+// ── 客户端 HTML 白名单净化（innerHTML 之前的唯一硬闸） ──
+// 浏览器解析属性值时会解码实体，所以 href="&#106;avascript:" 在这里天然被拦下。
+const OK_TAGS = new Set([
+  "p","br","div","span","strong","b","em","i","u","s","del","ins","sub","sup",
+  "h1","h2","h3","h4","h5","h6","ul","ol","li","blockquote","pre","code",
+  "a","img","hr","figure","figcaption",
+  "table","thead","tbody","tfoot","tr","th","td","caption"
+]);
+const DROP_ALL = new Set([
+  "script","style","iframe","object","embed","applet","form","input","button",
+  "select","textarea","link","meta","base","svg","math","template","noscript",
+  "frame","frameset","video","audio","source","track"
+]);
+const OK_ATTR = {
+  a: ["href", "title"],
+  img: ["src", "alt", "title", "width", "height"],
+  td: ["colspan", "rowspan"],
+  th: ["colspan", "rowspan"]
+};
+
+function sanitizeHtml(html) {
+  const src = new DOMParser().parseFromString(String(html || ""), "text/html");
+  const out = document.createElement("div");
+
+  function copy(from, to) {
+    for (const node of from.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        to.appendChild(document.createTextNode(node.nodeValue));
+        continue;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) continue; // 注释等一律丢弃
+
+      const tag = node.tagName.toLowerCase();
+      if (DROP_ALL.has(tag)) continue;                    // 连内容一起丢
+      if (!OK_TAGS.has(tag)) { copy(node, to); continue; } // 未知标签：脱壳保留文本
+
+      const e = document.createElement(tag);
+      for (const attr of Array.from(node.attributes)) {
+        const n = attr.name.toLowerCase();
+        if (!(OK_ATTR[tag] || []).includes(n)) continue;
+        const v = attr.value;
+        if (n === "href" || n === "src") {
+          if (/^\s*(?:javascript|vbscript|data)\s*:/i.test(v)) continue;
+        }
+        e.setAttribute(n, v);
+      }
+      if (tag === "img" && !e.getAttribute("src")) continue;
+      if (tag === "a") {
+        e.setAttribute("target", "_blank");
+        e.setAttribute("rel", "noopener noreferrer");
+      }
+      copy(node, e);
+      to.appendChild(e);
+    }
+  }
+
+  copy(src.body, out);
+  return out.innerHTML;
+}
+
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s == null ? "" : String(s);
+  return d.innerHTML;
+}
+
+function fail(msg) {
+  el("state").innerHTML = '<p>' + esc(msg) + '</p>';
+}
+
+function render(a) {
+  document.title = (a.title || "文章详情") + " — 大CAR愈见";
+
+  el("aTitle").textContent = a.title || "无标题";
+  el("aSource").textContent = a.source_name || "";
+  el("aDate").textContent = a.pub_date || "";
+  if (a.updated_at) el("aUpdated").textContent = "修改于 " + a.updated_at;
+
+  if (a.summary) {
+    el("aSummary").textContent = a.summary;
+    el("aSummary").style.display = "block";
+  }
+
+  const kws = String(a.keywords || "").split(",").filter(Boolean).slice(0, 10);
+  el("aKeywords").innerHTML = kws
+    .map(k => '<a class="tag" href="index.html?q=' + encodeURIComponent(k) + '">' + esc(k) + '</a>')
+    .join("");
+
+  const isLocal = String(a.article_url || "").startsWith("local://");
+  if (a.content_html && String(a.content_html).trim()) {
+    el("aContent").innerHTML = sanitizeHtml(a.content_html);
+  } else if (a.content) {
+    el("aContent").innerHTML = String(a.content)
+      .split(/\n+/)
+      .filter(Boolean)
+      .map(p => "<p>" + esc(p) + "</p>")
+      .join("");
+  } else {
+    el("aContent").innerHTML = '<p style="color:#999">暂无正文内容</p>';
+  }
+
+  if (!isLocal && a.article_url) {
+    el("aOriginalLink").href = a.article_url;
+    el("aOriginal").style.display = "block";
+  }
+
+  el("state").style.display = "none";
+  el("articleWrap").style.display = "block";
+}
+
+async function load() {
+  if (!articleId) return fail("缺少文章 id 参数");
+
+  let article = null;
+  if (USE_EMBEDDED) {
+    article = embeddedArticles.find(x => String(x.id) === String(articleId)) || null;
+  } else {
+    try {
+      const res = await fetch("/api/articles/" + encodeURIComponent(articleId));
+      if (res.ok) article = await res.json();
+    } catch (err) {
+      console.error("Load error:", err);
+    }
+  }
+
+  if (!article) return fail("文章不存在或尚未发布");
+  render(article);
+}
+
+load();
+</script>
+</body>
+</html>

@@ -1,19 +1,67 @@
 const { getDb, saveDb } = require("./connection");
 
-function insertArticle({ title, summary, keywords, pub_date, article_url, source_name, content }) {
+/**
+ * 插入文章，返回新行 id；重复（命中 article_url UNIQUE）时返回 0。
+ * 注意：saveDb() 内部的 export() 会关闭并重开数据库句柄，使
+ * getRowsModified() / last_insert_rowid() 归零，故二者必须在 saveDb() 之前读取。
+ * 又因 INSERT OR IGNORE 被忽略时 last_insert_rowid() 会残留上一次的值，
+ * 必须先用 getRowsModified() 判断本次是否真的写入。
+ */
+function insertArticle({ title, summary, keywords, pub_date, article_url, source_name, content, content_html }) {
   const db = getDb();
   try {
     db.run(
-      `INSERT OR IGNORE INTO articles (title, summary, keywords, pub_date, article_url, source_name, content)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [title, summary || "", keywords || "", pub_date, article_url, source_name, content || ""]
+      `INSERT OR IGNORE INTO articles (title, summary, keywords, pub_date, article_url, source_name, content, content_html)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [title, summary || "", keywords || "", pub_date, article_url, source_name, content || "", content_html || ""]
     );
+    const changed = db.getRowsModified();
+    const idRes = db.exec("SELECT last_insert_rowid() AS id");
+    const newId = changed > 0 && idRes[0] ? idRes[0].values[0][0] : 0;
     saveDb();
-    return db.getRowsModified() > 0;
+    return newId;
   } catch (err) {
     console.error("[repo] insertArticle:", err.message);
-    return false;
+    return 0;
   }
+}
+
+function getLastInsertId() {
+  const res = getDb().exec("SELECT last_insert_rowid() AS id");
+  return res[0] ? res[0].values[0][0] : null;
+}
+
+function getArticleById(id) {
+  const db = getDb();
+  try {
+    const res = db.exec(
+      `SELECT id, title, summary, keywords, pub_date, article_url, source_name,
+              content, content_html, created_at, updated_at
+         FROM articles WHERE id = ?`,
+      [id]
+    );
+    if (!res[0]) return null;
+    const cols = res[0].columns;
+    return Object.fromEntries(cols.map((c, i) => [c, res[0].values[0][i] || ""]));
+  } catch (e) {
+    console.error("[repo] getArticleById:", e.message);
+    return null;
+  }
+}
+
+// 仅允许更新本地文章（article_url 以 local:// 开头），三方抓取的文章不可覆盖
+function updateArticle(id, { title, content_html, content, summary, keywords, pub_date }) {
+  const db = getDb();
+  db.run(
+    `UPDATE articles
+        SET title = ?, content_html = ?, content = ?, summary = ?, keywords = ?,
+            pub_date = ?, updated_at = datetime('now')
+      WHERE id = ? AND article_url LIKE 'local://%'`,
+    [title, content_html || "", content || "", summary || "", keywords || "", pub_date, id]
+  );
+  const changed = db.getRowsModified() > 0;   // 必须在 saveDb 之前读
+  saveDb();
+  return changed;
 }
 
 function searchArticles(query, page = 1, limit = 20, source = "") {
@@ -84,8 +132,17 @@ function getSources() {
 function deleteArticle(id) {
   const db = getDb();
   db.run("DELETE FROM articles WHERE id = ?", [id]);
+  const changed = db.getRowsModified() > 0;   // 必须在 saveDb 之前读
   saveDb();
-  return db.getRowsModified() > 0;
+  return changed;
 }
 
-module.exports = { insertArticle, searchArticles, getStats, getSources, deleteArticle };
+module.exports = {
+  insertArticle,
+  getArticleById,
+  updateArticle,
+  searchArticles,
+  getStats,
+  getSources,
+  deleteArticle,
+};

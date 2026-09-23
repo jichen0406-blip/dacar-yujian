@@ -158,14 +158,38 @@
   .toast.show { transform: translateX(0); }
   .toast.success { background: #00b894; }
   .toast.error { background: #d63031; }
+
+  /* ── 本地文章编辑器 ── */
+  .field-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .field-row input {
+    padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
+    font-size: 14px; outline: none; transition: border-color 0.2s;
+    font-family: inherit;
+  }
+  .field-row input:focus { border-color: #2c5f8a; }
+  #localTitle { flex: 1; min-width: 240px; }
+  #localDate { width: 160px; }
+  #toolbar-container { border: 1px solid #ddd; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+  #editor-container {
+    height: 420px; overflow-y: auto;
+    border: 1px solid #ddd; border-top: none;
+    border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;
+  }
+  .editor-note { font-size: 12px; color: #999; margin-top: 8px; line-height: 1.6; }
+  .status-line { font-size: 13px; margin-top: 10px; min-height: 20px; }
+  .status-line.ok { color: #27ae60; }
+  .status-line.err { color: #d63031; }
+  .btn-edit { background: #e8f0f8; color: #1b2f4a; }
+  .btn-edit:hover { background: #d6e4f0; }
 </style>
+<link href="vendor/wangeditor/style.css" rel="stylesheet">
 </head>
 <body>
 
 <div class="header">
   <img class="logo" src="logo.png" alt="驯鹿生物">
   <h1>⚙️ 大CAR愈见 — 管理面板</h1>
-  <p>粘贴微信公众号文章链接，自动抓取元数据</p>
+  <p>抓取公众号文章，或直接撰写本地文章</p>
 </div>
 
 
@@ -195,7 +219,7 @@ https://mp.weixin.qq.com/s/..."></textarea>
     <div class="btn-row">
       <button class="btn btn-primary" id="fetchBtn" onclick="handleFetch()">🔍 抓取文章信息</button>
       <button class="btn btn-secondary" onclick="clearUrls()">清空</button>
-      <button class="btn btn-deploy" id="deployBtn" onclick="handleDeploy()">🚀 部署到线上</button>
+      <button class="btn btn-deploy" id="deployBtn" onclick="handleDeploy(this)">🚀 部署到线上</button>
     </div>
 
     <!-- Progress -->
@@ -209,6 +233,39 @@ https://mp.weixin.qq.com/s/..."></textarea>
       <div class="msg" id="resultMsg"></div>
       <div class="details" id="resultDetails"></div>
       <ul class="failed-list" id="resultFailed"></ul>
+    </div>
+  </div>
+
+  <!-- 本地文章录入 -->
+  <div class="section" id="localSection">
+    <h2 class="section-title" id="localSectionTitle">✍️ 撰写本地文章</h2>
+    <div class="hint" style="margin-top:0;margin-bottom:12px;">
+      标题 + 正文（可粘贴或拖拽图片）。发布后自动提取摘要与关键词，数据源标记为「本地上传」。
+    </div>
+
+    <div class="field-row">
+      <input type="text" id="localTitle" placeholder="文章标题 *" autocomplete="off">
+      <input type="date" id="localDate">
+    </div>
+
+    <div id="toolbar-container"></div>
+    <div id="editor-container"></div>
+
+    <div class="editor-note">
+      图片会自动压缩为 WebP（最长边 1600px）后存入 <code>images/</code> 目录，无需手动处理。
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="localSaveBtn" onclick="saveLocalArticle()">📤 发布文章</button>
+      <button class="btn btn-secondary" id="localCancelBtn" onclick="resetLocalForm()" style="display:none">取消编辑</button>
+      <button class="btn btn-deploy" onclick="handleDeploy(this)">🚀 写入数据并部署到线上</button>
+    </div>
+
+    <div class="status-line" id="localStatus"></div>
+
+    <div class="editor-note">
+      发布只是存入本地数据库；要让线上站点看到，还需点右侧「写入数据并部署到线上」
+      （重建 articles-data.js → 备份数据库 → git 提交推送），约 1-2 分钟后生效。
     </div>
   </div>
 
@@ -239,6 +296,8 @@ https://mp.weixin.qq.com/s/..."></textarea>
 </div>
 
 <div class="nav-link"><a href="/index.html">🔍 返回搜索</a></div>
+
+<script src="vendor/wangeditor/index.js"></script>
 
 <script>
 // ── Password check ──
@@ -276,11 +335,16 @@ async function loadRecentArticles() {
       return;
     }
     tbody.innerHTML = rows.map(function(r) {
+      var actions = '';
+      if (isLocalRow(r)) {
+        actions += '<button class="btn-sm btn-edit" onclick="editLocalArticle(' + r.id + ')">编辑</button> ';
+      }
+      actions += '<button class="btn-sm" onclick="deleteArticle(' + r.id + ')">删除</button>';
       return '<tr>' +
         '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(r.title) + '">' + escapeHtml(r.title) + '</td>' +
         '<td>' + escapeHtml(r.source_name) + '</td>' +
         '<td>' + escapeHtml(r.pub_date) + '</td>' +
-        '<td><button class="btn-sm" onclick="deleteArticle(' + r.id + ')">删除</button></td>' +
+        '<td style="white-space:nowrap">' + actions + '</td>' +
       '</tr>';
     }).join("");
     renderAdminPagination();
@@ -306,9 +370,207 @@ function adminGoPage(page) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+// ── 本地文章 ──
+
+function isLocalRow(r) {
+  return String(r.article_url || "").indexOf("local://") === 0 || r.source_name === "本地上传";
+}
+
+function todayIso() {
+  var d = new Date();
+  var p = function(n) { return String(n).padStart(2, "0"); };
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+let editor = null;
+let editorToolbar = null;
+let editingId = null;
+
+function setLocalStatus(msg, cls) {
+  var el = document.getElementById("localStatus");
+  el.textContent = msg || "";
+  el.className = "status-line" + (cls ? " " + cls : "");
+}
+
+function saveButtonLabel() {
+  return editingId ? "💾 更新文章" : "📤 发布文章";
+}
+
+function resetLocalForm() {
+  editingId = null;
+  document.getElementById("localTitle").value = "";
+  document.getElementById("localDate").value = todayIso();
+  document.getElementById("localSectionTitle").textContent = "✍️ 撰写本地文章";
+  document.getElementById("localSaveBtn").textContent = saveButtonLabel();
+  document.getElementById("localCancelBtn").style.display = "none";
+  setLocalStatus("");
+  mountEditor(null);
+}
+
+/**
+ * 装载（或重装）编辑器。
+ * 不能用 editor.setHtml() 回填含 <img> 的内容 —— wangEditor v5 对相对路径图片
+ * 会抛 "Cannot read properties of null"，故一律销毁重建，html 走 createEditor 配置。
+ */
+function mountEditor(html) {
+  if (typeof window.wangEditor === "undefined") {
+    setLocalStatus("编辑器加载失败（vendor/wangeditor 缺失），请刷新重试", "err");
+    return false;
+  }
+
+  const { createEditor, createToolbar } = window.wangEditor;
+
+  if (editor) { try { editor.destroy(); } catch (e) { /* 忽略 */ } editor = null; }
+  if (editorToolbar) { try { editorToolbar.destroy(); } catch (e) { /* 忽略 */ } editorToolbar = null; }
+  document.getElementById("editor-container").innerHTML = "";
+  document.getElementById("toolbar-container").innerHTML = "";
+
+  editor = createEditor({
+    selector: "#editor-container",
+    html: html || "<p><br></p>",
+    config: {
+      placeholder: "输入正文，可直接粘贴或拖拽图片…",
+      MENU_CONF: {
+        uploadImage: {
+          maxFileSize: 15 * 1024 * 1024,
+          allowedFileTypes: ["image/png", "image/jpeg", "image/webp", "image/gif"],
+          // 裸二进制直传，不走 multipart
+          customUpload: async function(file, insertFn) {
+            try {
+              const res = await fetch("/api/upload", {
+                method: "POST",
+                headers: { "Content-Type": file.type || "application/octet-stream" },
+                body: file,
+              });
+              const data = await res.json();
+              if (!data.success) { showToast(data.message || "图片上传失败", "error"); return; }
+              insertFn(data.url, "", "");
+              showToast("图片已压缩：" + Math.round(data.bytes / 1024) + "KB", "success");
+            } catch (err) {
+              console.error(err);
+              showToast("图片上传失败", "error");
+            }
+          },
+        },
+      },
+    },
+  });
+
+  try {
+    editorToolbar = createToolbar({
+      editor: editor,
+      selector: "#toolbar-container",
+      config: {
+        // 只保留结构化排版（不产出 inline style）；刻意不含视频菜单
+        toolbarKeys: [
+          "headerSelect", "blockquote", "|",
+          "bold", "underline", "italic", "through", "code", "clearStyle", "|",
+          "bulletedList", "numberedList", "todo", "|",
+          "insertLink", "uploadImage", "insertTable", "codeBlock", "divider", "|",
+          "undo", "redo",
+        ],
+      },
+    });
+  } catch (err) {
+    // 某个 key 不被该版本识别时，降级为默认工具栏并排除视频
+    console.error("[editor] toolbarKeys 无效，降级为默认工具栏：", err);
+    document.getElementById("toolbar-container").innerHTML = "";
+    editorToolbar = createToolbar({
+      editor: editor,
+      selector: "#toolbar-container",
+      config: { excludeKeys: ["insertVideo", "uploadVideo", "group-video"] },
+    });
+  }
+
+  return true;
+}
+
+function initEditor() {
+  mountEditor(null);
+  document.getElementById("localDate").value = todayIso();
+}
+
+async function saveLocalArticle() {
+  if (!editor) { showToast("编辑器未就绪", "error"); return; }
+
+  const title = document.getElementById("localTitle").value.trim();
+  const content_html = editor.getHtml();
+
+  if (!title) { setLocalStatus("请填写标题", "err"); showToast("请填写标题", "error"); return; }
+  if (!editor.getText().trim()) { setLocalStatus("正文不能为空", "err"); showToast("正文不能为空", "error"); return; }
+
+  const btn = document.getElementById("localSaveBtn");
+  btn.disabled = true;
+  btn.textContent = editingId ? "⏳ 更新中..." : "⏳ 发布中...";
+  setLocalStatus("");
+
+  const targetId = editingId;
+  try {
+    const res = await fetch(targetId ? "/api/articles/" + targetId + "/update" : "/api/local", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: title,
+        content_html: content_html,
+        pub_date: document.getElementById("localDate").value,
+      }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      setLocalStatus(data.error || "保存失败", "err");
+      showToast(data.error || "保存失败", "error");
+      return;
+    }
+
+    const id = targetId || data.id;
+    setLocalStatus((targetId ? "已更新" : "已发布") + "（id=" + id + "）　摘要：" + (data.summary || "").slice(0, 60), "ok");
+    showToast(targetId ? "文章已更新" : "文章已发布", "success");
+
+    resetLocalForm();
+    loadStats();
+    loadRecentArticles();
+    window.open("article.html?id=" + id, "_blank");
+  } catch (err) {
+    console.error(err);
+    setLocalStatus("网络错误，请确认服务正在运行", "err");
+    showToast("保存失败", "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = saveButtonLabel();
+  }
+}
+
+async function editLocalArticle(id) {
+  try {
+    const res = await fetch("/api/articles/" + id);
+    if (!res.ok) { showToast("读取文章失败", "error"); return; }
+    const a = await res.json();
+
+    editingId = a.id;
+    document.getElementById("localTitle").value = a.title || "";
+    document.getElementById("localDate").value = a.pub_date || todayIso();
+
+    // 先更新表单状态，再装载正文（装载失败时状态仍正确）
+    document.getElementById("localSectionTitle").textContent = "✏️ 编辑本地文章（id=" + a.id + "）";
+    document.getElementById("localSaveBtn").textContent = saveButtonLabel();
+    document.getElementById("localCancelBtn").style.display = "inline-block";
+    setLocalStatus("正在编辑已有文章，修改后点「更新文章」保存");
+
+    if (!mountEditor(a.content_html || "<p><br></p>")) {
+      setLocalStatus("正文装载失败，可取消后重试", "err");
+    }
+    document.getElementById("localSection").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (err) {
+    console.error(err);
+    showToast("读取文章失败", "error");
+  }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   loadStats();
   loadRecentArticles();
+  initEditor();
   var searchInput = document.getElementById('adminSearchInput');
   if (searchInput) {
     var timer;
@@ -387,8 +649,10 @@ async function handleFetch() {
   }
 }
 
-async function handleDeploy() {
-  const deployBtn = document.getElementById("deployBtn");
+// 两个部署按钮共用（传入触发按钮，避免 id 冲突）
+async function handleDeploy(btn) {
+  const deployBtn = btn || document.getElementById("deployBtn");
+  const originalLabel = deployBtn.textContent;
   deployBtn.disabled = true;
   deployBtn.textContent = "⏳ 部署中...";
 
@@ -397,15 +661,21 @@ async function handleDeploy() {
     const data = await res.json();
     if (data.success) {
       showToast("部署完成！1-2分钟后刷新线上页面", "success");
+      if (typeof setLocalStatus === "function") {
+        setLocalStatus("已部署，约 1-2 分钟后线上生效", "ok");
+      }
     } else {
       showToast("部署失败：" + (data.error || "未知错误"), "error");
+      if (typeof setLocalStatus === "function") {
+        setLocalStatus("部署失败：" + (data.error || "未知错误"), "err");
+      }
     }
   } catch (err) {
     console.error(err);
     showToast("部署请求失败", "error");
   } finally {
     deployBtn.disabled = false;
-    deployBtn.textContent = "🚀 部署到线上";
+    deployBtn.textContent = originalLabel;
   }
 }
 
@@ -414,6 +684,7 @@ async function deleteArticle(id) {
   try {
     await fetch(`/api/articles/${id}/delete`, { method: "POST" });
     showToast("已删除", "success");
+    if (editingId === id) resetLocalForm();   // 正在编辑的这篇被删了，清空表单
     loadStats();
     loadRecentArticles();
   } catch (err) {

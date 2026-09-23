@@ -5,6 +5,7 @@
  */
 const config = require("./config");
 const { extractKeywords } = require("./keywords");
+const { cleanText } = require("./text-process");
 
 let browser = null;
 
@@ -87,23 +88,8 @@ async function fetchArticle(url) {
         document.querySelector(".rich_media_content")?.innerText?.trim() ||
         "";
 
-      // Extract intro from body (always preferred over short meta description)
-      if (body && body.length > 0) {
-        const cleaned = body
-          .replace(/([一-鿿])\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*([一-鿿])/g, '$1$2')
-          .replace(/([一-鿿])\s*\n\s*\n\s*([一-鿿])/g, '$1$2')
-          .replace(/([一-鿿])\s*\n\s*([一-鿿])/g, '$1$2')
-          .replace(/\n{3,}/g, '\n\n')
-          .replace(/\n/g, '')
-          // Strip WeChat video player junk
-          .replace(/视频加载失败，请刷新页面再试\s*刷新/g, '')
-          .replace(/播放视频.+?(?=[一-鿿A-Za-z])/g, '')
-          .trim();
+      // 摘要的正文清洗放在 Node 侧做（page.evaluate 内无法 require 共享模块）
 
-        // Take first 500 chars of cleaned text, falling back to meta if body is too short
-        summary = cleaned.slice(0, 500);
-      }
-      // Fallback: keep meta description if body extraction is empty
 
       // Source (公众号 name)
       let source =
@@ -138,6 +124,11 @@ async function fetchArticle(url) {
 
       return { title, summary, source, pubDate, body };
     });
+
+    // 正文优先作摘要（比 meta description 完整）；清洗在 Node 侧完成
+    if (metadata.body) {
+      metadata.summary = cleanText(metadata.body).slice(0, 500);
+    }
 
     // Parse and normalize date
     const pubDate = parseChineseDate(metadata.pubDate);

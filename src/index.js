@@ -14,11 +14,13 @@ async function main() {
   const app = express();
 
   // Middleware
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({ limit: "5mb" }));
 
   // API routes (before static!)
   app.use("/api/search", require("./routes/search"));
   app.use("/api/fetch", require("./routes/fetch"));
+  app.use("/api", require("./routes/articles")); // /api/articles/:id, /api/local, /api/articles/:id/update
+  app.use("/api", require("./routes/upload"));   // /api/upload
   app.use("/api", require("./routes/stats")); // /api/stats, /api/sources, /api/articles/:id/delete
 
   // Static files
@@ -40,7 +42,7 @@ async function main() {
       execSync("node scripts/backup-db.js", { cwd: gitRoot, encoding: "utf-8", timeout: 10000 });
       console.log("[deploy] Backup done");
       // Step 3: git add + commit + push
-      execSync("git add articles-data.js index.html admin.html scripts/ package.json", { cwd: gitRoot, timeout: 5000 });
+      execSync("git add articles-data.js index.html admin.html article.html images/ scripts/ vendor/ package.json", { cwd: gitRoot, timeout: 5000 });
       execSync("git add -A", { cwd: gitRoot, timeout: 5000 });
       const now = new Date();
       const ts = now.toISOString().slice(0, 19).replace("T", " ");

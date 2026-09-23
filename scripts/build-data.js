@@ -26,13 +26,19 @@ async function main() {
   const db = new SQL.Database(buffer);
 
   const res = db.exec(
-    "SELECT id, title, summary, keywords, pub_date, article_url, source_name, content FROM articles ORDER BY pub_date DESC"
+    "SELECT id, title, summary, keywords, pub_date, article_url, source_name, content, content_html FROM articles ORDER BY pub_date DESC"
   );
 
+  const LOCAL_SOURCE = "本地上传";
   const articles = [];
   if (res[0]) {
     const cols = res[0].columns;
-    articles.push(...res[0].values.map(v => Object.fromEntries(cols.map((c, i) => [c, v[i] || ""]))));
+    for (const v of res[0].values) {
+      const o = Object.fromEntries(cols.map((c, i) => [c, v[i] || ""]));
+      // 只有本地文章需要内嵌富文本，避免三方文章带空字段
+      if (o.source_name !== LOCAL_SOURCE) delete o.content_html;
+      articles.push(o);
+    }
   }
 
   // Generate JS file with all articles embedded

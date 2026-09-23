@@ -26,11 +26,11 @@ router.post("/", async (req, res) => {
     // Scrape metadata from all URLs
     const { success, failed } = await fetchArticles(validUrls);
 
-    // Insert successful articles into DB
+    // Insert successful articles into DB（insertArticle 返回新行 id，重复时为 0）
     let inserted = 0;
     for (const article of success) {
-      const ok = repo.insertArticle(article);
-      if (ok) inserted++;
+      const newId = repo.insertArticle(article);
+      if (newId) inserted++;
     }
 
     console.log(`[fetch] Done: ${inserted} inserted, ${failed.length} failed, ${success.length - inserted} duplicates`);
