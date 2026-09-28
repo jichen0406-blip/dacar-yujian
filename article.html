@@ -261,7 +261,7 @@ function render(a) {
     el("aSummary").style.display = "block";
   }
 
-  const kws = String(a.keywords || "").split(",").filter(Boolean).slice(0, 10);
+  const kws = String(a.keywords || "").split(",").filter(Boolean).slice(0, 12);
   el("aKeywords").innerHTML = kws
     .map(k => '<a class="tag" href="index.html?q=' + encodeURIComponent(k) + '">' + esc(k) + '</a>')
     .join("");

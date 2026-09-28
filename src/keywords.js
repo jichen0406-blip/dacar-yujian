@@ -288,7 +288,7 @@ function legacyExtract(title, body) {
   for (const [word] of candidates) {
     const isSubstring = result.some(r => r !== word && r.includes(word));
     if (!isSubstring) result.push(word);
-    if (result.length >= 10) break;
+    if (result.length >= 12) break;
   }
   return result;
 }
@@ -396,10 +396,54 @@ function extractCountries(text) {
   return out;
 }
 
+// ── 学术会议 / 学术组织 ──
+// 规范名统一用缩写（与语料标题写法一致，如「2025 IMS」「2024 EHA」），不带年份，
+// 以便同一会议跨年汇总到同一个标签。泛化的活动类型（年会/巡讲/患教会/研讨会）不在此列。
+const CONFERENCE_ALIASES = [
+  ["IMS", ["IMS", "国际骨髓瘤学会", "International Myeloma Society"]],
+  ["ASH", ["ASH", "美国血液学会", "American Society of Hematology"]],
+  ["EHA", ["EHA", "欧洲血液学协会", "European Hematology Association"]],
+  ["EBMT", ["EBMT", "欧洲血液与骨髓移植学会", "欧洲血液和骨髓移植学会"]],
+  ["ASTCT", ["ASTCT", "美国移植与细胞治疗学会"]],
+  ["IMWG", ["IMWG", "国际骨髓瘤工作组", "International Myeloma Working Group"]],
+  ["EMN", ["EMN", "欧洲骨髓瘤网络", "European Myeloma Network"]],
+  ["CSCO", ["CSCO", "中国临床肿瘤学会"]],
+  ["ESMO", ["ESMO", "欧洲肿瘤内科学会"]],
+  ["ASCO", ["ASCO", "美国临床肿瘤学会"]],
+  ["AACR", ["AACR", "美国癌症研究协会"]],
+];
+
+function extractConferences(text) {
+  const out = [];
+  if (!text) return out;
+  const s = collapseWS(text);
+  const hits = [];
+
+  for (const [abbr, aliases] of CONFERENCE_ALIASES) {
+    for (const alias of aliases) {
+      let idx = -1;
+      if (/^[A-Za-z]/.test(alias)) {
+        // 拉丁缩写必须卡词边界，否则 ASH 会命中 ASCT、IMS 会命中 …
+        const m = new RegExp(`(?<![A-Za-z])${alias}(?![A-Za-z])`).exec(s);
+        if (m) idx = m.index;
+      } else {
+        idx = s.indexOf(alias);
+      }
+      if (idx === -1) continue;
+      hits.push({ abbr, pos: idx });
+      break;   // 同一会议取首个出现位置即可
+    }
+  }
+
+  hits.sort((a, b) => a.pos - b.pos);
+  for (const h of hits) if (out.indexOf(h.abbr) === -1) out.push(h.abbr);
+  return out;
+}
+
 /**
- * Extract keywords — doctor names, then countries/regions, then hospitals
+ * Extract keywords — doctor names → conferences → countries/regions → hospitals
  * (title first); falls back to legacy jieba segmentation only when nothing matched.
- * @returns {string[]} up to 10 keywords
+ * @returns {string[]} up to 12 keywords
  */
 function extractKeywords(title, body) {
   const t = title || "";
@@ -410,31 +454,34 @@ function extractKeywords(title, body) {
     for (const k of arr) {
       if (!seen.has(k)) {
         seen.add(k);
-        if (seen.size >= 10) return;
+        if (seen.size >= 12) return;
       }
     }
   };
 
-  // 标题优先（核心汇报人 / 主办地），再正文；每层内：医生名 → 国家/地区 → 医院
-  const countryHits = new Set();
-  const pushCountries = arr => { for (const c of arr) countryHits.add(c); push(arr); };
+  // 短标签（会议缩写、国家/地区）在子串去重里豁免，否则会被同名机构吞掉
+  const protectedHits = new Set();
+  const pushProtected = arr => { for (const k of arr) protectedHits.add(k); push(arr); };
 
+  // 标题优先（核心汇报人 / 大会名 / 主办地），再正文；
+  // 每层内固定：医生名 → 会议 → 国家/地区 → 医院
   push(extractCnDoctors(t));
   push(extractEnDoctors(t));
-  pushCountries(extractCountries(t));
+  pushProtected(extractConferences(t));
+  pushProtected(extractCountries(t));
   push(extractHospitals(t));
   push(extractCnDoctors(b));
   push(extractEnDoctors(b));
-  pushCountries(extractCountries(b));
+  pushProtected(extractConferences(b));
+  pushProtected(extractCountries(b));
   push(extractHospitals(b));
 
   const all = [...seen];
   // 子串去重：「华西」⊂「华西医院」时只留长者。
-  // 国家/地区豁免，否则「美国」会被「美国哈佛医学院」吞掉。
   const keywords = all.filter(
-    k => countryHits.has(k) || !all.some(o => o !== k && o.includes(k))
+    k => protectedHits.has(k) || !all.some(o => o !== k && o.includes(k))
   );
-  if (keywords.length >= 1) return keywords.slice(0, 10);
+  if (keywords.length >= 1) return keywords.slice(0, 12);
 
   // 无结构化匹配时用 jieba 兜底。但正文过短（只填了标题、正文是「文章详情」
   // 这类占位符的空壳文章）切出来全是「倾听/临床/声音」泛词，不如不产出，
@@ -448,6 +495,7 @@ module.exports = {
   extractKeywords,
   extractCnDoctors,
   extractEnDoctors,
+  extractConferences,
   extractCountries,
   extractHospitals,
 };
