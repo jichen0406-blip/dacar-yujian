@@ -19,8 +19,9 @@ const CN_DOCTOR = /[一-鿿]{1,3}(?:教授|主任医师|副主任医师|主治�
 // Leading chars that are never part of a person's name; stripped from the
 // front of a candidate when greedy matching glued preceding context onto it.
 // 于/向 excluded — they are real surnames in this corpus (于滕滕、向茜茜)。
-// 丨 是标题分隔符（「大CAR愈见丨安刚教授」），必须剥离，否则会与「安刚」共存并被去重误删。
-const CN_NAME_LEAD_JUNK = /^[院科室医附血液辞词到邀请特与及和并或让在把者将等这那该各其会届位名患被的了经新由助临内病骨髓肿瘤免疫治疗研究护理主外骨神精心脏肝肾皮妇产儿眼检影放麻急康复药化国丨·、，。]+/;
+// 丨 是标题分隔符（「大CAR愈见丨安刚教授」）；介/绍 来自「专家简介」（「简介路瑾教授」）。
+// 这些若漏剥，会产出「丨安刚」「介路瑾」并与干净名共存，被子串去重误删。
+const CN_NAME_LEAD_JUNK = /^[院科室医附血液辞词到邀请特与及和并或让在把者将等这那该各其会届位名患被的了经新由助临内病骨髓肿瘤免疫治疗研究护理主外骨神精心脏肝肾皮妇产儿眼检影放麻急康复药化国丨·、，。介绍]+/;
 
 const CN_NAME_TRAIL_JUNK = /[的了等和与及并其之该各位名中上内处人员数]+$/;
 
@@ -38,6 +39,7 @@ const CN_BARE_REJECT = new Set([
   "科室", "内科", "外科", "儿科", "妇科", "产科", "药学", "检验",
   "影像", "麻醉", "急诊", "康复", "中医", "中药", "助理", "研究员",
   "住院", "护理", "学员", "主任医",
+  "博士生", "硕士生", "细胞库", "实验室", "课题组", "编辑部",
   "北京", "上海", "广州", "深圳", "中国", "天津", "重庆", "杭州", "南京",
   "武汉", "成都", "西安", "长沙", "郑州", "沈阳", "大连", "青岛", "济南",
   "福州", "厦门", "苏州", "温州", "宁波", "佛山",
@@ -45,8 +47,16 @@ const CN_BARE_REJECT = new Set([
 
 const CN_TITLE_SUFFIX = /(教授|主任医师|副主任医师|主治医师|住院医师|主任|医师|博士|院长|研究员|导师)$/;
 
+// 全局版（长头衔在前，避免「主任医师」被「主任」抢先匹配）；用于从机构名里切掉误吞的头衔
+const CN_TITLE_IN_NAME = /(?:教授|主任医师|副主任医师|主治医师|住院医师|主任|医师|博士|院长|研究员|导师)/g;
+
 // 数量词误匹配：真实姓名不含「多位/各位/数名」这类量词
 const CN_QUANTIFIER = /(?:^|[多各数几])[位名]$/;
+
+// 头衔后面紧跟机构后缀 ⇒ 是机构名的一部分，不是人名。
+// 例：「常委北京医师协会」抓到的「委北京医师」→ 后接「协会」；
+//     「专业委员会副主任委员」抓到的「员会副主任」→ 后接「委员」。
+const CN_ORG_AFTER = /^(?:协会|学会|分会|委员会|委员|理事会|学组|协作组|联盟|基金会)/;
 
 function extractCnDoctors(text) {
   const out = [];
@@ -56,6 +66,10 @@ function extractCnDoctors(text) {
   for (const m of s.matchAll(CN_DOCTOR)) {
     const token = m[0];
     if (CN_TOKEN_BLACKLIST.has(token)) continue;
+
+    // 头衔后紧跟机构词 ⇒ 机构名的一部分
+    const after = s.slice(m.index + token.length, m.index + token.length + 3);
+    if (CN_ORG_AFTER.test(after)) continue;
 
     const raw = token.replace(CN_TITLE_SUFFIX, "");
     if (CN_QUANTIFIER.test(raw)) continue;   // 「华西多位教授」「各位教授」
@@ -92,7 +106,16 @@ const EN_STOP = new Set([
   "Refractory", "Marrow", "Plasma", "Diseases", "Disease", "Grade", "Frontier",
   "Frontiers", "Future", "Vision", "Journal", "Nature", "Medicine", "Lancet",
   "Hematology", "Advances", "Advance", "Patient", "Patients", "Cases", "Series",
+  // 期刊名常见词（参考文献区大量出现）
+  "Nat", "Rev", "Clin", "Oncol", "Med", "Blood", "Cancer", "J", "Neoplasia",
+  "Ther", "Haematol", "Biol", "Transplant", "Immunol", "Genet", "Res",
+  "Haematologica", "Oncologist", "Target", "Signal", "Commun", "Proc",
+  "Natl", "Acad", "Sci", "Engl", "Int", "Eur", "Am", "Br", "Exp", "Mol",
 ]);
+
+// 引用格式的「姓 + 缩写」：末位是 1-3 个全大写字母（Usmani SZ、Munshi NC、Anderson KC）。
+// 全大写姓氏一般 4 字母以上（CHNG），故只挡 1-3 位。
+const EN_CITATION_INITIALS = /(?:\s[A-Z]{1,3})$/;
 
 function extractEnDoctors(text) {
   const out = [];
@@ -114,6 +137,7 @@ function extractEnDoctors(text) {
     const body = words.slice(1);
     if (body.length === 0) continue;
     if (body.some(w => EN_STOP.has(w.replace(/\.$/, "")))) continue;
+    if (EN_CITATION_INITIALS.test(name)) continue;   // 参考文献的「姓+缩写」
     if (out.indexOf(name) !== -1) continue;
     out.push(name);
   }
@@ -140,7 +164,8 @@ const HOSP_FRAME = new Set([
 // Leftover clause junk a hospital capture could still begin with; stripped
 // off the front repeatedly. Chars that can start a real hospital name
 // (中/华/上/南/北/广/深/常/军/解/人…) are intentionally NOT here.
-const HOSP_LEAD_JUNK = /^[展势多许各外进近了就来前后位本这那的等所内肿瘤科室优加至之已未仅需时仍现使由特邀请与及和并在把被将向自收治作于出而到让经主研要究者关为针探揭示表明显提改善促包参]*/;
+// 委员 来自机构名残留（「专业委员会副主任委员中国医院…」→ 剥掉后由 HOSP_GENERIC 拒掉）。
+const HOSP_LEAD_JUNK = /^[展势多许各外进近了就来前后位本这那的等所内肿瘤科室优加至之已未仅需时仍现使由特邀请与及和并在把被将向自收治作于出而到让经主研要究者关为针探揭示表明显提改善促包参员委]*/;
 
 // 泛指而非具体机构（「中国医院」「当地医院」），不是机构专名
 const HOSP_GENERIC = /^(?:中国|国内|全国|当地|该|本|某|我市|海外|国外|外省|境外|各大|一家)(?:医院|医学院|医学中心|研究所|研究院)$/;
@@ -174,9 +199,22 @@ function extractHospitals(text) {
       if (HOSP_FRAME.has(s[k]) && k !== m.index - 1) { start = k + 1; break; }
     }
 
-    const name = s.slice(start, m.index + m[0].length)
-      .replace(HOSP_LEAD_JUNK, "")
-      .replace(/医院医院$/, "医院");
+    // 机构名不含头衔。若向左扩张时吞进了「专家简介路瑾教授」这类人名片段，
+    // 取最后一个头衔之后的部分（→「北京大学人民医院」）。
+    let name = s.slice(start, m.index + m[0].length).replace(/医院医院$/, "医院");
+    const titles = [...name.matchAll(CN_TITLE_IN_NAME)];
+    if (titles.length) {
+      const last = titles[titles.length - 1];
+      name = name.slice(last.index + last[0].length);
+    }
+    // 相邻重复片段折半：「北京大学人民医院北京大学人民医院」→「北京大学人民医院」
+    if (name.length % 2 === 0) {
+      const half = name.length / 2;
+      if (name.slice(0, half) === name.slice(half)) name = name.slice(0, half);
+    }
+    // 头衔截断后可能又露出机构残留（「副主任委员中国医院」→「委员中国医院」），
+    // 故前缀剥离放在截断之后再做一次
+    name = name.replace(HOSP_LEAD_JUNK, "");
     if (name.length < 4 || name.length > 22) continue;
     if (name.includes("某") || name.includes("另一") || name.includes("国内外")) continue;
     if (HOSP_GENERIC.test(name)) continue;   // 「中国医院」这类泛指，非具体机构
