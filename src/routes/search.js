@@ -2,14 +2,15 @@ const express = require("express");
 const router = express.Router();
 const repo = require("../db/repository");
 
-// GET /api/search?q=关键词&page=1&limit=20&source=公众号名
+// GET /api/search?q=关键词&page=1&limit=20&source=公众号名&include_hidden=1
+// include_hidden=1 仅供管理后台使用，公开检索默认排除隐藏文章
 router.get("/", (req, res) => {
   try {
-    const { q = "", page = "1", limit = "20", source = "" } = req.query;
+    const { q = "", page = "1", limit = "20", source = "", include_hidden = "", status = "" } = req.query;
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 
-    const result = repo.searchArticles(q, pageNum, limitNum, source);
+    const result = repo.searchArticles(q, pageNum, limitNum, source, include_hidden === "1", status);
     res.json(result);
   } catch (err) {
     console.error("[search] Error:", err.message);

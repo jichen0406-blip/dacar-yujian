@@ -322,13 +322,14 @@ const HOSP_SUFFIX = /(?:医院|医学院|医学中心|研究所|研究院|...)$/
 | 方法 | 路径 | 说明 | 请求/响应 |
 |------|------|------|-----------|
 | POST | `/api/fetch` | 批量抓取文章 | Body: `{ urls: [...] }` → `{ total, inserted, duplicates, failed }` |
-| GET | `/api/search` | 搜索文章 | Query: `?q=&page=1&limit=20&source=` → `{ rows, total, page, limit }` |
-| GET | `/api/articles/:id` | 单篇详情（含富文本） | → 全字段含 `content_html`/`created_at`/`updated_at`；400 非法 id，404 不存在 |
+| GET | `/api/search` | 搜索文章 | Query: `?q=&page=1&limit=20&source=&include_hidden=1&status=` → `{ rows, total, page, limit }`。**默认排除隐藏文章**，`include_hidden=1` 仅供后台；`status=visible\|hidden` 需配合 `include_hidden=1`，公开检索传 `status` 无效（不会泄露） |
+| GET | `/api/articles/:id` | 单篇详情（含富文本） | → 全字段含 `content_html`/`is_hidden`；隐藏文章返回 **404**，后台带 `?include_hidden=1` 才可取 |
 | POST | `/api/local` | 新建本地文章 | Body: `{ title, content_html, pub_date?, summary?, keywords? }` → `{ success, id, article_url, summary, keywords }` |
 | POST | `/api/articles/:id/update` | 编辑本地文章 | Body 同上 → `{ updated: true, id, summary, keywords }`；**403 若为三方文章** |
+| POST | `/api/articles/:id/hide` | 软隐藏 / 恢复 | Body: `{ hidden: true \| false }` → `{ hidden, id }`；400 非法 id，404 不存在 |
 | POST | `/api/upload` | 上传图片 | Body = 图片裸字节 → `{ success, url, width, height, bytes }`；413 超 15MB，415 非图片 |
-| GET | `/api/stats` | 统计信息 | `{ total_articles, by_source: [{name, count}] }` |
-| GET | `/api/sources` | 公众号列表 | `["来源A", "来源B", ...]` |
+| GET | `/api/stats` | 统计信息 | `{ total_articles, hidden_articles, by_source: [{name, count}] }` |
+| GET | `/api/sources` | 公众号列表 | `?include_hidden=1` 可含"仅被隐藏文章占用"的来源 → `["来源A", ...]` |
 | POST | `/api/articles/:id/delete` | 删除文章 | `{ deleted: true/false }` |
 | POST | `/api/deploy` | 触发部署 | `{ success: true, url }` 或 `{ success: false, error }` |
 
@@ -346,13 +347,42 @@ CREATE TABLE articles (
   content      TEXT DEFAULT '',       -- 纯文本前 2000 字符（供 LIKE 检索）
   content_html TEXT DEFAULT '',       -- 富文本原文（仅本地文章非空）
   created_at   TEXT DEFAULT (datetime('now')),
-  updated_at   TEXT DEFAULT ''        -- 最后一次编辑时间
+  updated_at   TEXT DEFAULT '',       -- 最后一次编辑时间
+  is_hidden    INTEGER DEFAULT 0      -- 1=软隐藏：数据保留，前端不展示
 );
 CREATE INDEX idx_articles_pub_date ON articles(pub_date);
 CREATE INDEX idx_articles_source ON articles(source_name);
 ```
 
 **迁移**：`src/db/schema.js` 的 `migrate()` 用 `PRAGMA table_info` 探测缺失列再做 `ALTER TABLE ADD COLUMN`，存量库不重建；建表语句本身也带新列，新库一步到位。
+
+## 文章软隐藏
+
+隐藏是**软删除的替代方案**：数据完整保留，只是不在前端出现。
+
+**三处过滤必须同时做，缺一不可**：
+
+1. `repository.searchArticles` 默认追加 `COALESCE(is_hidden, 0) = 0`（后台传 `includeHidden=true` 绕过）
+2. `GET /api/articles/:id` 对隐藏文章返回 404（后台带 `?include_hidden=1`）
+3. `scripts/build-data.js` 的 SELECT 带 `WHERE COALESCE(is_hidden, 0) = 0`（否则 GitHub Pages 的静态数据里仍会出现）
+
+只做其中一两处，会出现「列表不见了但详情页还能打开」或「本地隐藏了但线上还在」的不一致。
+
+**管理面板**：「最近文章」每行有「隐藏/显示」切换；隐藏行整行灰化并显示 `已隐藏` 徽章，仍可编辑/删除/恢复。隐藏不弹确认（可逆），删除保留确认。
+
+顶部三个筛选**可任意组合**，切页时保持：
+- 关键字搜索框（300ms 防抖）
+- 来源下拉（`/api/sources?include_hidden=1` 填充，含"只有隐藏文章"的来源）
+- 状态下拉：全部状态 / 仅显示 / 仅隐藏（对应 `status=visible|hidden`）
+
+⚠️ **可见性过滤的顺序不能颠倒**：必须先判 `includeHidden`（公开闸门）再判 `status`。若先判 `status`，公开检索传 `?status=hidden` 就能直接拿到隐藏文章。现逻辑：
+```js
+if (!includeHidden)        clauses.push("COALESCE(is_hidden, 0) = 0");  // 公开：永远只看可见
+else if (status === "hidden")  clauses.push("COALESCE(is_hidden, 0) = 1");  // 后台：仅隐藏
+else if (status === "visible") clauses.push("COALESCE(is_hidden, 0) = 0");  // 后台：仅显示
+```
+
+**注意**：`getArticleById` 的字段映射用 `??` 而非 `||`，否则 `is_hidden=0` 会被转成空串。
 
 ## 本地文章（后台撰写）
 

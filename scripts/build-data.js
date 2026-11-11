@@ -26,7 +26,7 @@ async function main() {
   const db = new SQL.Database(buffer);
 
   const res = db.exec(
-    "SELECT id, title, summary, keywords, pub_date, article_url, source_name, content, content_html FROM articles ORDER BY pub_date DESC"
+    "SELECT id, title, summary, keywords, pub_date, article_url, source_name, content, content_html FROM articles WHERE COALESCE(is_hidden, 0) = 0 ORDER BY pub_date DESC"
   );
 
   const LOCAL_SOURCE = "本地上传";

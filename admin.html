@@ -181,6 +181,16 @@
   .status-line.err { color: #d63031; }
   .btn-edit { background: #e8f0f8; color: #1b2f4a; }
   .btn-edit:hover { background: #d6e4f0; }
+  .btn-hide { background: #eef0f3; color: #5a6673; }
+  .btn-hide:hover { background: #dfe3e8; }
+  .btn-hide.is-hidden { background: #fff3cd; color: #8a6d3b; }
+  .btn-hide.is-hidden:hover { background: #ffe9a8; }
+  .row-hidden td { opacity: .55; }
+  .badge-hidden {
+    display: inline-block; font-size: 10px; line-height: 1;
+    color: #8a6d3b; background: #fff3cd; border: 1px solid #f2e0a8;
+    padding: 3px 6px; border-radius: 4px; margin-right: 6px; vertical-align: middle;
+  }
 </style>
 <link href="vendor/wangeditor/style.css" rel="stylesheet">
 </head>
@@ -274,6 +284,14 @@ https://mp.weixin.qq.com/s/..."></textarea>
     <h2 class="section-title">📋 最近文章</h2>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
       <input type="text" id="adminSearchInput" placeholder="按标题、来源或关键字搜索..." style="flex:1;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none;">
+      <select id="adminSourceFilter" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none;background:#fff;color:#333;max-width:180px;">
+        <option value="">全部来源</option>
+      </select>
+      <select id="adminStatusFilter" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none;background:#fff;color:#333;">
+        <option value="">全部状态</option>
+        <option value="visible">仅显示</option>
+        <option value="hidden">仅隐藏</option>
+      </select>
       <span id="filteredCount" style="font-size:13px;color:#999;white-space:nowrap;">-</span>
     </div>
     <div style="overflow-x:auto;">
@@ -316,14 +334,18 @@ async function loadStats() {
 
 let adminPage = 1;
 let adminQuery = '';
+let adminSource = '';
+let adminStatus = '';
 let adminTotal = 0;
 const ADMIN_LIMIT = 20;
 
 async function loadRecentArticles() {
   const tbody = document.getElementById("articlesTableBody");
   const query = adminQuery ? '&q=' + encodeURIComponent(adminQuery) : '';
+  const sourceParam = adminSource ? '&source=' + encodeURIComponent(adminSource) : '';
+  const statusParam = adminStatus ? '&status=' + encodeURIComponent(adminStatus) : '';
   try {
-    const res = await fetch("/api/search?limit=" + ADMIN_LIMIT + "&page=" + adminPage + query);
+    const res = await fetch("/api/search?limit=" + ADMIN_LIMIT + "&page=" + adminPage + query + sourceParam + statusParam + "&include_hidden=1");
     const data = await res.json();
     const rows = data.rows || [];
     adminTotal = data.total || 0;
@@ -335,13 +357,16 @@ async function loadRecentArticles() {
       return;
     }
     tbody.innerHTML = rows.map(function(r) {
+      var hidden = Number(r.is_hidden) === 1;
       var actions = '';
       if (isLocalRow(r)) {
         actions += '<button class="btn-sm btn-edit" onclick="editLocalArticle(' + r.id + ')">编辑</button> ';
       }
+      actions += '<button class="btn-sm btn-hide' + (hidden ? ' is-hidden' : '') + '" onclick="toggleHidden(' + r.id + ',' + (hidden ? 'false' : 'true') + ')">' + (hidden ? '显示' : '隐藏') + '</button> ';
       actions += '<button class="btn-sm" onclick="deleteArticle(' + r.id + ')">删除</button>';
-      return '<tr>' +
-        '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(r.title) + '">' + escapeHtml(r.title) + '</td>' +
+      return '<tr' + (hidden ? ' class="row-hidden"' : '') + '>' +
+        '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(r.title) + '">' +
+          (hidden ? '<span class="badge-hidden">已隐藏</span>' : '') + escapeHtml(r.title) + '</td>' +
         '<td>' + escapeHtml(r.source_name) + '</td>' +
         '<td>' + escapeHtml(r.pub_date) + '</td>' +
         '<td style="white-space:nowrap">' + actions + '</td>' +
@@ -371,6 +396,39 @@ function adminGoPage(page) {
 }
 
 // ── 本地文章 ──
+
+async function loadSourceOptions() {
+  var sel = document.getElementById("adminSourceFilter");
+  if (!sel) return;
+  try {
+    // include_hidden=1：连"只有隐藏文章"的来源也要能筛出来
+    var sources = await (await fetch("/api/sources?include_hidden=1")).json();
+    var cur = adminSource;
+    sel.innerHTML = '<option value="">全部来源</option>' + sources.map(function(s) {
+      return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>';
+    }).join("");
+    sel.value = sources.indexOf(cur) > -1 ? cur : "";
+    if (sel.value !== cur) adminSource = sel.value;   // 来源已不存在时复位
+  } catch (err) { console.error(err); }
+}
+
+// 软隐藏：数据保留，仅控制前端是否展示
+async function toggleHidden(id, nextHidden) {
+  try {
+    var res = await fetch("/api/articles/" + id + "/hide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hidden: nextHidden }),
+    });
+    if (!res.ok) { showToast("操作失败", "error"); return; }
+    showToast(nextHidden ? "已隐藏（前端不再展示）" : "已恢复显示", "success");
+    loadStats();
+    loadRecentArticles();
+  } catch (err) {
+    console.error(err);
+    showToast("操作失败", "error");
+  }
+}
 
 function isLocalRow(r) {
   return String(r.article_url || "").indexOf("local://") === 0 || r.source_name === "本地上传";
@@ -543,7 +601,7 @@ async function saveLocalArticle() {
 
 async function editLocalArticle(id) {
   try {
-    const res = await fetch("/api/articles/" + id);
+    const res = await fetch("/api/articles/" + id + "?include_hidden=1");
     if (!res.ok) { showToast("读取文章失败", "error"); return; }
     const a = await res.json();
 
@@ -571,6 +629,23 @@ document.addEventListener('DOMContentLoaded', function() {
   loadStats();
   loadRecentArticles();
   initEditor();
+  loadSourceOptions();
+  var sourceFilter = document.getElementById('adminSourceFilter');
+  if (sourceFilter) {
+    sourceFilter.addEventListener('change', function() {
+      adminSource = sourceFilter.value;
+      adminPage = 1;
+      loadRecentArticles();
+    });
+  }
+  var statusFilter = document.getElementById('adminStatusFilter');
+  if (statusFilter) {
+    statusFilter.addEventListener('change', function() {
+      adminStatus = statusFilter.value;
+      adminPage = 1;
+      loadRecentArticles();
+    });
+  }
   var searchInput = document.getElementById('adminSearchInput');
   if (searchInput) {
     var timer;

@@ -36,13 +36,14 @@ function getArticleById(id) {
   try {
     const res = db.exec(
       `SELECT id, title, summary, keywords, pub_date, article_url, source_name,
-              content, content_html, created_at, updated_at
+              content, content_html, created_at, updated_at, is_hidden
          FROM articles WHERE id = ?`,
       [id]
     );
     if (!res[0]) return null;
     const cols = res[0].columns;
-    return Object.fromEntries(cols.map((c, i) => [c, res[0].values[0][i] || ""]));
+    // 用 ?? 而非 ||，否则 is_hidden=0 会被转成空串
+    return Object.fromEntries(cols.map((c, i) => [c, res[0].values[0][i] ?? ""]));
   } catch (e) {
     console.error("[repo] getArticleById:", e.message);
     return null;
@@ -64,7 +65,7 @@ function updateArticle(id, { title, content_html, content, summary, keywords, pu
   return changed;
 }
 
-function searchArticles(query, page = 1, limit = 20, source = "") {
+function searchArticles(query, page = 1, limit = 20, source = "", includeHidden = false, status = "") {
   const db = getDb();
   const offset = (page - 1) * limit;
 
@@ -83,6 +84,16 @@ function searchArticles(query, page = 1, limit = 20, source = "") {
     params.push(source);
   }
 
+  // 可见性过滤：includeHidden 是唯一闸门，status 只在后台视角内做细分。
+  // 顺序很重要——若先判 status，公开检索传 ?status=hidden 会直接拿到隐藏文章。
+  if (!includeHidden) {
+    clauses.push("COALESCE(is_hidden, 0) = 0");      // 公开：永远只看可见
+  } else if (status === "hidden") {
+    clauses.push("COALESCE(is_hidden, 0) = 1");      // 后台：仅隐藏
+  } else if (status === "visible") {
+    clauses.push("COALESCE(is_hidden, 0) = 0");      // 后台：仅显示
+  }
+
   const where = clauses.length > 0 ? "WHERE " + clauses.join(" AND ") : "";
 
   // Count
@@ -98,7 +109,7 @@ function searchArticles(query, page = 1, limit = 20, source = "") {
   // Search
   let rows = [];
   try {
-    const searchSql = `SELECT id, title, summary, keywords, pub_date, article_url, source_name, content
+    const searchSql = `SELECT id, title, summary, keywords, pub_date, article_url, source_name, content, is_hidden
                        FROM articles ${where}
                        ORDER BY pub_date DESC LIMIT ? OFFSET ?`;
     const allParams = [...params, limit, offset];
@@ -118,15 +129,29 @@ function searchArticles(query, page = 1, limit = 20, source = "") {
 function getStats() {
   const db = getDb();
   const total = db.exec("SELECT COUNT(*) as cnt FROM articles")[0]?.values[0]?.[0] || 0;
+  const hidden = db.exec("SELECT COUNT(*) as cnt FROM articles WHERE COALESCE(is_hidden, 0) = 1")[0]?.values[0]?.[0] || 0;
   const res = db.exec("SELECT source_name, COUNT(*) as cnt FROM articles GROUP BY source_name ORDER BY cnt DESC");
   const bySource = res[0] ? res[0].values.map(v => ({ name: v[0], count: v[1] })) : [];
-  return { total_articles: total, by_source: bySource };
+  return { total_articles: total, hidden_articles: hidden, by_source: bySource };
 }
 
-function getSources() {
+function getSources(includeHidden = false) {
   const db = getDb();
-  const res = db.exec("SELECT DISTINCT source_name FROM articles ORDER BY source_name");
+  const where = includeHidden ? "" : "WHERE COALESCE(is_hidden, 0) = 0";
+  const res = db.exec(`SELECT DISTINCT source_name FROM articles ${where} ORDER BY source_name`);
   return res[0] ? res[0].values.map(v => v[0]) : [];
+}
+
+// 软隐藏：数据保留，仅控制前端是否展示
+function setArticleHidden(id, hidden) {
+  const db = getDb();
+  db.run(
+    "UPDATE articles SET is_hidden = ?, updated_at = datetime('now') WHERE id = ?",
+    [hidden ? 1 : 0, id]
+  );
+  const changed = db.getRowsModified() > 0;   // 必须在 saveDb 之前读
+  saveDb();
+  return changed;
 }
 
 function deleteArticle(id) {
@@ -144,5 +169,6 @@ module.exports = {
   searchArticles,
   getStats,
   getSources,
+  setArticleHidden,
   deleteArticle,
 };

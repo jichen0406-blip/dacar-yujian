@@ -20,6 +20,11 @@ const MIGRATIONS = [
     column: "updated_at",
     ddl: "ALTER TABLE articles ADD COLUMN updated_at TEXT DEFAULT ''",
   },
+  {
+    table: "articles",
+    column: "is_hidden",
+    ddl: "ALTER TABLE articles ADD COLUMN is_hidden INTEGER DEFAULT 0",
+  },
 ];
 
 // 存量库补列（新库由 CREATE TABLE 直接带上，此处全部跳过）
@@ -51,7 +56,8 @@ function initSchema() {
       content      TEXT DEFAULT '',
       content_html TEXT DEFAULT '',
       created_at   TEXT DEFAULT (datetime('now')),
-      updated_at   TEXT DEFAULT ''
+      updated_at   TEXT DEFAULT '',
+      is_hidden    INTEGER DEFAULT 0
     )
   `);
 

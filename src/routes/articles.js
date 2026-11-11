@@ -29,12 +29,16 @@ function buildFields(body) {
 }
 
 // GET /api/articles/:id — 单篇详情（含富文本），供详情页与编辑回填
+// 隐藏的文章对外按不存在处理；管理后台编辑时带 ?include_hidden=1
 router.get("/articles/:id", (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
+  const includeHidden = req.query.include_hidden === "1";
   const article = repo.getArticleById(id);
-  if (!article) return res.status(404).json({ error: "Not found" });
+  if (!article || (article.is_hidden && !includeHidden)) {
+    return res.status(404).json({ error: "Not found" });
+  }
 
   res.json(article);
 });
