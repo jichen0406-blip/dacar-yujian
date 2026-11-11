@@ -55,4 +55,53 @@ router.post("/articles/:id/hide", (req, res) => {
   }
 });
 
+// GET /api/deploy-status — 比对数据库可见文章与已构建的静态数据
+// 用于提示「有改动尚未部署」，可发现功能上线前就存在的差异
+router.get("/deploy-status", (req, res) => {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+
+    const dbIds = repo.getVisibleIds().map(Number);
+    const builtPath = path.resolve(__dirname, "..", "..", "articles-data.js");
+
+    let builtIds = [];
+    let builtAt = null;
+    try {
+      const txt = fs.readFileSync(builtPath, "utf8");
+
+      // 用 indexOf 而非正则解析，避免转义问题
+      const atIdx = txt.indexOf("Generated at:");
+      if (atIdx > -1) {
+        const lineEnd = txt.indexOf("\n", atIdx);
+        builtAt = txt.slice(atIdx + "Generated at:".length, lineEnd > -1 ? lineEnd : undefined).trim();
+      }
+
+      const marker = "window.__ARTICLES__ =";
+      const start = txt.indexOf(marker);
+      if (start === -1) throw new Error("找不到 window.__ARTICLES__");
+      let body = txt.slice(start + marker.length).trim();
+      if (body.endsWith(";")) body = body.slice(0, -1);
+      builtIds = JSON.parse(body).map(a => Number(a.id));
+    } catch (e) {
+      return res.json({ in_sync: false, error: "读取 articles-data.js 失败：" + e.message,
+                        db_count: dbIds.length, built_count: 0, built_at: null });
+    }
+
+    const same = dbIds.length === builtIds.length &&
+                 dbIds.every((id, i) => id === builtIds[i]);
+
+    res.json({
+      in_sync: same,
+      db_count: dbIds.length,
+      built_count: builtIds.length,
+      built_at: builtAt,
+      diff: same ? 0 : dbIds.length - builtIds.length,
+    });
+  } catch (err) {
+    console.error("[deploy-status] Error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

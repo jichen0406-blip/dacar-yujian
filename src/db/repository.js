@@ -142,6 +142,13 @@ function getSources(includeHidden = false) {
   return res[0] ? res[0].values.map(v => v[0]) : [];
 }
 
+// 当前可见（未隐藏）文章的 id，用于比对线上静态数据是否已同步
+function getVisibleIds() {
+  const db = getDb();
+  const res = db.exec("SELECT id FROM articles WHERE COALESCE(is_hidden, 0) = 0 ORDER BY id");
+  return res[0] ? res[0].values.map(v => v[0]) : [];
+}
+
 // 软隐藏：数据保留，仅控制前端是否展示
 function setArticleHidden(id, hidden) {
   const db = getDb();
@@ -169,6 +176,7 @@ module.exports = {
   searchArticles,
   getStats,
   getSources,
+  getVisibleIds,
   setArticleHidden,
   deleteArticle,
 };

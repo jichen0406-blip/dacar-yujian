@@ -184,6 +184,20 @@
   .btn-hide { background: #eef0f3; color: #5a6673; }
   .btn-hide:hover { background: #dfe3e8; }
   .btn-hide.is-hidden { background: #fff3cd; color: #8a6d3b; }
+  .btn-deploy-sm {
+    background: #27ae60; color: #fff; padding: 6px 14px; border: none;
+    border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: background .2s;
+  }
+  .btn-deploy-sm:hover { background: #219a52; }
+  .btn-deploy-sm:disabled { opacity: .6; cursor: not-allowed; }
+  .pending-bar {
+    display: none; align-items: center; gap: 10px; flex-wrap: wrap;
+    background: #fff8e1; border: 1px solid #f2e0a8; border-radius: 8px;
+    padding: 10px 14px; margin-bottom: 12px; font-size: 13px; color: #8a6d3b;
+  }
+  .pending-bar b { color: #b8860b; }
+  .pending-bar .since { color: #a89060; font-size: 12px; }
   .btn-hide.is-hidden:hover { background: #ffe9a8; }
   .row-hidden td { opacity: .55; }
   .badge-hidden {
@@ -282,6 +296,11 @@ https://mp.weixin.qq.com/s/..."></textarea>
   <!-- Recent Articles -->
   <div class="section">
     <h2 class="section-title">📋 最近文章</h2>
+    <div class="pending-bar" id="pendingDeploy">
+      <span id="pendingLabel">⚠️ 有 <b id="pendingCount">0</b> 次改动尚未同步到线上</span>
+      <span class="since" id="pendingSince"></span>
+      <button class="btn-deploy-sm" style="margin-left:auto;" onclick="handleDeploy(this)">🚀 立即部署</button>
+    </div>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
       <input type="text" id="adminSearchInput" placeholder="按标题、来源或关键字搜索..." style="flex:1;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none;">
       <select id="adminSourceFilter" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;outline:none;background:#fff;color:#333;max-width:180px;">
@@ -330,6 +349,62 @@ async function loadStats() {
     document.getElementById("statSources").textContent =
       (data.by_source && data.by_source.length) || 0;
   } catch (err) { console.error(err); }
+}
+
+var PENDING_KEY = "wechat_pending_deploy";
+
+function readPending() {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || null; } catch (e) { return null; }
+}
+
+// 记录一次"尚未部署"的写操作；累积多次后一次性部署
+function markDirty() {
+  var p = readPending() || { count: 0, firstAt: Date.now() };
+  p.count += 1;
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); } catch (e) { /* 隐私模式忽略 */ }
+  renderPendingBanner();
+}
+
+function clearDirty() {
+  try { localStorage.removeItem(PENDING_KEY); } catch (e) { /* 忽略 */ }
+  renderPendingBanner();
+}
+
+// 提示条依据两件事：
+//   1) 服务端比对：数据库可见文章 vs 已构建的 articles-data.js（能发现"功能上线前"就存在的差异）
+//   2) 本地计数：本次会话里的写操作次数（提供"有几次改动"的粒度）
+async function renderPendingBanner() {
+  var el = document.getElementById("pendingDeploy");
+  if (!el) return;
+
+  var pending = readPending();
+  var drift = null;
+  try {
+    var r = await fetch("/api/deploy-status");
+    if (r.ok) drift = await r.json();
+  } catch (e) { /* 服务没起时忽略，退化为只看本地计数 */ }
+
+  var outOfSync = !!(drift && drift.in_sync === false);
+  if (!outOfSync && (!pending || !pending.count)) {
+    el.style.display = "none";
+    return;
+  }
+
+  el.style.display = "flex";
+  var labelEl = document.getElementById("pendingLabel");
+  var sinceEl = document.getElementById("pendingSince");
+
+  if (outOfSync) {
+    labelEl.innerHTML = "⚠️ 数据库与线上数据不一致（本地 " + drift.db_count +
+      " 篇 / 已构建 " + drift.built_count + " 篇），需要部署";
+    sinceEl.textContent = drift.built_at ? "上次构建 " + drift.built_at : "";
+  } else {
+    var pad = function (n) { return String(n).padStart(2, "0"); };
+    var t = new Date(pending.firstAt);
+    labelEl.innerHTML = "⚠️ 有 <b id=\"pendingCount\">" + pending.count + "</b> 次改动尚未同步到线上";
+    sinceEl.textContent = "首次改动 " + pad(t.getMonth() + 1) + "-" + pad(t.getDate()) +
+      " " + pad(t.getHours()) + ":" + pad(t.getMinutes());
+  }
 }
 
 let adminPage = 1;
@@ -422,6 +497,7 @@ async function toggleHidden(id, nextHidden) {
     });
     if (!res.ok) { showToast("操作失败", "error"); return; }
     showToast(nextHidden ? "已隐藏（前端不再展示）" : "已恢复显示", "success");
+    markDirty();
     loadStats();
     loadRecentArticles();
   } catch (err) {
@@ -584,6 +660,7 @@ async function saveLocalArticle() {
     const id = targetId || data.id;
     setLocalStatus((targetId ? "已更新" : "已发布") + "（id=" + id + "）　摘要：" + (data.summary || "").slice(0, 60), "ok");
     showToast(targetId ? "文章已更新" : "文章已发布", "success");
+    markDirty();
 
     resetLocalForm();
     loadStats();
@@ -630,6 +707,7 @@ document.addEventListener('DOMContentLoaded', function() {
   loadRecentArticles();
   initEditor();
   loadSourceOptions();
+  renderPendingBanner();
   var sourceFilter = document.getElementById('adminSourceFilter');
   if (sourceFilter) {
     sourceFilter.addEventListener('change', function() {
@@ -709,6 +787,7 @@ async function handleFetch() {
     }
 
     showToast(`成功添加 ${data.inserted} 篇文章`, "success");
+    if (data.inserted > 0) markDirty();
     loadStats();
     loadRecentArticles();
 
@@ -736,6 +815,7 @@ async function handleDeploy(btn) {
     const data = await res.json();
     if (data.success) {
       showToast("部署完成！1-2分钟后刷新线上页面", "success");
+      clearDirty();
       if (typeof setLocalStatus === "function") {
         setLocalStatus("已部署，约 1-2 分钟后线上生效", "ok");
       }
@@ -760,6 +840,7 @@ async function deleteArticle(id) {
     await fetch(`/api/articles/${id}/delete`, { method: "POST" });
     showToast("已删除", "success");
     if (editingId === id) resetLocalForm();   // 正在编辑的这篇被删了，清空表单
+    markDirty();
     loadStats();
     loadRecentArticles();
   } catch (err) {

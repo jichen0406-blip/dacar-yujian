@@ -329,6 +329,7 @@ const HOSP_SUFFIX = /(?:医院|医学院|医学中心|研究所|研究院|...)$/
 | POST | `/api/articles/:id/hide` | 软隐藏 / 恢复 | Body: `{ hidden: true \| false }` → `{ hidden, id }`；400 非法 id，404 不存在 |
 | POST | `/api/upload` | 上传图片 | Body = 图片裸字节 → `{ success, url, width, height, bytes }`；413 超 15MB，415 非图片 |
 | GET | `/api/stats` | 统计信息 | `{ total_articles, hidden_articles, by_source: [{name, count}] }` |
+| GET | `/api/deploy-status` | 比对数据库与已构建静态数据 | `{ in_sync, db_count, built_count, built_at, diff }`；供后台「未部署改动」提示条使用 |
 | GET | `/api/sources` | 公众号列表 | `?include_hidden=1` 可含"仅被隐藏文章占用"的来源 → `["来源A", ...]` |
 | POST | `/api/articles/:id/delete` | 删除文章 | `{ deleted: true/false }` |
 | POST | `/api/deploy` | 触发部署 | `{ success: true, url }` 或 `{ success: false, error }` |
@@ -383,6 +384,28 @@ else if (status === "visible") clauses.push("COALESCE(is_hidden, 0) = 0");  // �
 ```
 
 **注意**：`getArticleById` 的字段映射用 `??` 而非 `||`，否则 `is_hidden=0` 会被转成空串。
+
+### 未部署改动提示（方案 B）
+
+隐藏 / 删除 / 发布本地文章 / 抓取新增，**都只改数据库，不会自动上线**——线上读的是静态 `articles-data.js`，必须重新构建并推送。
+
+为避免忘记部署，管理面板「最近文章」顶部有一条提示条，**依据两个信号**：
+
+**① 服务端数据比对（权威信号）** — `GET /api/deploy-status`
+- 对比「数据库里可见文章的 id 列表」与「已构建的 `articles-data.js` 里的 id 列表」
+- 不一致就报：`数据库与线上数据不一致（本地 94 篇 / 已构建 108 篇），需要部署`
+- 好处：**能发现"功能上线前"就存在的差异**（纯前端计数做不到这点）
+
+**② 本地操作计数（辅助信号）** — `localStorage["wechat_pending_deploy"]`
+- 写操作成功后 `markDirty()` 计数 +1，显示「有 N 次改动尚未同步到线上」+ 首次改动时间
+- 刷新 / 重开浏览器后仍在；隐私模式下写入失败静默忽略
+- 部署成功（`handleDeploy` 返回 success）后 `clearDirty()`
+
+提示条右侧有「🚀 立即部署」按钮，与另外两个部署按钮共用 `handleDeploy`。
+
+> ⚠️ 数据比对读的是**本地**的 `articles-data.js`。若手动跑 `scripts/build-data.js` 但不推送，比对会显示"已同步"而线上其实没更新。正常走部署按钮不会出现这个问题（构建与推送是一体的）。
+
+**同步时效**：点「立即部署」→ 构建+推送约 30 秒~2 分钟 → CDN 缓存 `max-age=600`，最长约 10 分钟；`Ctrl+Shift+R` 可绕过缓存立即看到。
 
 ## 本地文章（后台撰写）
 
