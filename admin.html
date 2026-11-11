@@ -395,8 +395,13 @@ async function renderPendingBanner() {
   var sinceEl = document.getElementById("pendingSince");
 
   if (outOfSync) {
-    labelEl.innerHTML = "⚠️ 数据库与线上数据不一致（本地 " + drift.db_count +
-      " 篇 / 已构建 " + drift.built_count + " 篇），需要部署";
+    if (drift.db_count !== drift.built_count) {
+      labelEl.innerHTML = "⚠️ 数据库与线上数据不一致（本地 " + drift.db_count +
+        " 篇 / 已构建 " + drift.built_count + " 篇），需要部署";
+    } else {
+      // 篇数相同但内容有差异（例如改了关键词、标题）
+      labelEl.innerHTML = "⚠️ 有文章内容改动尚未同步到线上（共 " + drift.db_count + " 篇），需要部署";
+    }
     sinceEl.textContent = drift.built_at ? "上次构建 " + drift.built_at : "";
   } else {
     var pad = function (n) { return String(n).padStart(2, "0"); };

@@ -142,11 +142,14 @@ function getSources(includeHidden = false) {
   return res[0] ? res[0].values.map(v => v[0]) : [];
 }
 
-// 当前可见（未隐藏）文章的 id，用于比对线上静态数据是否已同步
-function getVisibleIds() {
+// 当前可见（未隐藏）文章的 [id, keywords]，用于比对静态数据是否已同步。
+// 带上 keywords：这样「只改了关键词」也能被发现，而不只是增删/隐藏。
+function getVisibleEntries() {
   const db = getDb();
-  const res = db.exec("SELECT id FROM articles WHERE COALESCE(is_hidden, 0) = 0 ORDER BY id");
-  return res[0] ? res[0].values.map(v => v[0]) : [];
+  const res = db.exec(
+    "SELECT id, keywords FROM articles WHERE COALESCE(is_hidden, 0) = 0 ORDER BY id"
+  );
+  return res[0] ? res[0].values.map(v => [Number(v[0]), v[1] || ""]) : [];
 }
 
 // 软隐藏：数据保留，仅控制前端是否展示
@@ -176,7 +179,7 @@ module.exports = {
   searchArticles,
   getStats,
   getSources,
-  getVisibleIds,
+  getVisibleEntries,
   setArticleHidden,
   deleteArticle,
 };

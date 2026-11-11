@@ -62,10 +62,11 @@ router.get("/deploy-status", (req, res) => {
     const fs = require("fs");
     const path = require("path");
 
-    const dbIds = repo.getVisibleIds().map(Number);
+    // [id, keywords] 按 id 升序；带上 keywords 以便发现"只改了关键词"的差异
+    const dbEntries = repo.getVisibleEntries();
     const builtPath = path.resolve(__dirname, "..", "..", "articles-data.js");
 
-    let builtIds = [];
+    let builtEntries = [];
     let builtAt = null;
     try {
       const txt = fs.readFileSync(builtPath, "utf8");
@@ -82,21 +83,24 @@ router.get("/deploy-status", (req, res) => {
       if (start === -1) throw new Error("找不到 window.__ARTICLES__");
       let body = txt.slice(start + marker.length).trim();
       if (body.endsWith(";")) body = body.slice(0, -1);
-      builtIds = JSON.parse(body).map(a => Number(a.id));
+
+      // 构建文件按 pub_date 排序，这里统一按 id 排序后再比较（顺序无关）
+      builtEntries = JSON.parse(body)
+        .map(a => [Number(a.id), a.keywords || ""])
+        .sort((x, y) => x[0] - y[0]);
     } catch (e) {
       return res.json({ in_sync: false, error: "读取 articles-data.js 失败：" + e.message,
-                        db_count: dbIds.length, built_count: 0, built_at: null });
+                        db_count: dbEntries.length, built_count: 0, built_at: null });
     }
 
-    const same = dbIds.length === builtIds.length &&
-                 dbIds.every((id, i) => id === builtIds[i]);
+    const same = JSON.stringify(dbEntries) === JSON.stringify(builtEntries);
 
     res.json({
       in_sync: same,
-      db_count: dbIds.length,
-      built_count: builtIds.length,
+      db_count: dbEntries.length,
+      built_count: builtEntries.length,
       built_at: builtAt,
-      diff: same ? 0 : dbIds.length - builtIds.length,
+      diff: same ? 0 : dbEntries.length - builtEntries.length,
     });
   } catch (err) {
     console.error("[deploy-status] Error:", err.message);

@@ -440,6 +440,29 @@ function extractConferences(text) {
   return out;
 }
 
+// ── 通信作者 ──
+// 学术论文的「通信作者：黄晓军，北京大学人民医院…；胡豫，华中科技大学…」
+// 姓名后面不带「教授/医师」头衔，靠头衔锚点的 CN_DOCTOR 抓不到，
+// 需要按上下文单独提取：按分号切多人，每人取第一个逗号前的部分。
+const CORRESPONDING_RE = /(?:通信作者|通讯作者)\s*[:：]\s*([^\n]{1,300})/;
+
+function extractCorrespondingAuthors(text) {
+  const out = [];
+  if (!text) return out;
+
+  const m = CORRESPONDING_RE.exec(String(text));
+  if (!m) return out;
+
+  for (const part of m[1].split(/[；;]/)) {
+    let name = part.split(/[，,]/)[0].trim();
+    name = name.replace(CN_TITLE_SUFFIX, "").trim();
+    if (!/^[一-鿿]{2,4}$/.test(name)) continue;   // 只接受纯中文姓名
+    if (CN_BARE_REJECT.has(name)) continue;
+    if (out.indexOf(name) === -1) out.push(name);
+  }
+  return out;
+}
+
 /**
  * Extract keywords — doctor names → conferences → countries/regions → hospitals
  * (title first); falls back to legacy jieba segmentation only when nothing matched.
@@ -471,6 +494,7 @@ function extractKeywords(title, body) {
   pushProtected(extractCountries(t));
   push(extractHospitals(t));
   push(extractCnDoctors(b));
+  push(extractCorrespondingAuthors(b));   // 通信作者无头衔，需上下文提取
   push(extractEnDoctors(b));
   pushProtected(extractConferences(b));
   pushProtected(extractCountries(b));
@@ -496,6 +520,7 @@ module.exports = {
   extractCnDoctors,
   extractEnDoctors,
   extractConferences,
+  extractCorrespondingAuthors,
   extractCountries,
   extractHospitals,
 };
